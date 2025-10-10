@@ -20,15 +20,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
     }),
     fileFilter: function (req, file, cb) {
-      // Accept only tar files
-      if (!file.originalname.match(/\.(tar)$/)) {
-        return cb(new Error('Only .tar files are allowed!'));
+      // Accept tar files with various compression formats
+      if (!file.originalname.match(/\.(tar|tar\.gz|tgz|tar\.bz2)$/i)) {
+        return cb(new Error('Only .tar, .tar.gz, .tgz, or .tar.bz2 files are allowed!'));
       }
       cb(undefined, true);
     }
   });
 
-  app.post('/api/upload', upload.single('tarFile'), (req, res) => {
+  app.post('/api/upload', upload.single('file'), (req, res) => {
     if (!req.file) {
       return res.status(400).send('No file uploaded.');
     }
