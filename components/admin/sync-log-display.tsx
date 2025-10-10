@@ -248,7 +248,7 @@ export function SyncLogDisplay() {
               </div>
               <div className="flex justify-between">
                 <span className="text-muted-foreground">Records:</span>
-                <span className="font-mono">{status.totalRecords.toLocaleString()}</span>
+                <span className="font-mono">{status.totalRecords?.toLocaleString() || '0'}</span>
               </div>
               {status.detailedSync.lastRun && (
                 <div className="flex justify-between">
