@@ -464,10 +464,13 @@ async function buildUnitsLeasingMasterInternal(
         }
       }
 
-      if (!isOccupied && (rentData?.MarketRent || rentData?.market_rent || rentData?.ComputedMarketRent || rentData?.AdvertisedRent || rentData?.LegalRent)) {
-        const marketRent = parseFloat((rentData.MarketRent || rentData.market_rent || rentData.ComputedMarketRent || rentData.AdvertisedRent || rentData.LegalRent).toString().replace(/[,$]/g, '') || '0')
-        if (marketRent > 0) {
-          vacancyLoss = marketRent * (daysVacant / 30)
+      if (!isOccupied) {
+        const marketRentStr = (rentData?.MarketRent || rentData?.market_rent || rentData?.ComputedMarketRent || rentData?.AdvertisedRent || rentData?.LegalRent)?.toString()
+        if (marketRentStr) {
+          const marketRent = parseFloat(marketRentStr.replace(/[,$]/g, ''))
+          if (marketRent > 0 && daysVacant > 0) {
+            vacancyLoss = marketRent * (daysVacant / 30)
+          }
         }
       }
 
@@ -485,8 +488,14 @@ async function buildUnitsLeasingMasterInternal(
           isOccupied: isOccupied,
           studentFlag: studentFlag,
           primaryTenantFlag: primaryTenantFlag,
-          marketRent: parseFloat((rentData?.MarketRent || rentData?.market_rent || rentData?.ComputedMarketRent || rentData?.AdvertisedRent || rentData?.LegalRent)?.toString().replace(/[,$]/g, '') || '0') || null,
-          mrr: parseFloat((rentData?.Rent || rentData?.monthly_recurring_rent || rentData?.MarketRent || rentData?.market_rent || rentData?.ComputedMarketRent)?.toString().replace(/[,$]/g, '') || '0') || null,
+          marketRent: (() => {
+            const value = parseFloat((rentData?.MarketRent || rentData?.market_rent || rentData?.ComputedMarketRent || rentData?.AdvertisedRent || rentData?.LegalRent)?.toString().replace(/[,$]/g, '') || '0')
+            return value > 0 ? value : null
+          })(),
+          mrr: (() => {
+            const value = parseFloat((rentData?.Rent || rentData?.monthly_recurring_rent || rentData?.MarketRent || rentData?.market_rent || rentData?.ComputedMarketRent)?.toString().replace(/[,$]/g, '') || '0')
+            return value > 0 ? value : null
+          })(),
           moveIn: rentData?.move_in_date || leaseData?.move_in_date || null,
           moveOut: rentData?.move_out_date || leaseData?.move_out_date || null,
           leaseStart: rentData?.lease_start_date || leaseData?.lease_start_date || null,
