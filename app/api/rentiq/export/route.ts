@@ -1,14 +1,15 @@
 import { NextResponse } from 'next/server'
-import { rentiqAdvancedAnalytics } from '../../../../lib/rentiq-analytics-advanced'
+import { RentIQAnalytics } from '../../../../lib/rentiq-analytics'
 
 const brevo = require('@getbrevo/brevo')
+const rentiqAnalytics = RentIQAnalytics.getInstance()
 
 export async function POST(request: Request) {
   try {
     const { date } = await request.json()
     
     // Get RentIQ data
-    const rentiqData = await rentiqAdvancedAnalytics.calculateRentIQ(date)
+    const rentiqData = await rentiqAnalytics.calculateRentIQ(date)
     
     if (!rentiqData.rentiq_units || rentiqData.rentiq_units.length === 0) {
       return NextResponse.json({

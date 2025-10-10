@@ -74,8 +74,9 @@ class DataPreloader {
   private static async preloadRentIQ(): Promise<void> {
     try {
       console.log('[DATA_PRELOADER] 💰 Preloading RentIQ data...')
-      const rentiqModule = await import('./rentiq-analytics-advanced')
-      const data = await rentiqModule.RentIQAdvancedAnalytics.getInstance().calculateRentIQ()
+      const rentiqModule = await import('./rentiq-analytics')
+      const rentiqAnalytics = rentiqModule.RentIQAnalytics.getInstance()
+      const data = await rentiqAnalytics.calculateRentIQ()
       InstantUIManager.storeInstantData('rentiq', data)
       console.log('[DATA_PRELOADER] ✅ RentIQ data preloaded')
     } catch (error) {

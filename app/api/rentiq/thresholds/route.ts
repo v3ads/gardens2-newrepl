@@ -1,9 +1,11 @@
 import { NextResponse } from 'next/server'
-import { rentiqAdvancedAnalytics } from '../../../../lib/rentiq-analytics-advanced'
+import { RentIQAnalytics } from '../../../../lib/rentiq-analytics'
+
+const rentiqAnalytics = RentIQAnalytics.getInstance()
 
 export async function GET() {
   try {
-    const thresholds = await rentiqAdvancedAnalytics.getThresholds()
+    const thresholds = await rentiqAnalytics.getThresholds()
     
     return NextResponse.json({
       success: true,
@@ -35,7 +37,7 @@ export async function POST(request: Request) {
       }, { status: 400 })
     }
 
-    await rentiqAdvancedAnalytics.updateThresholds(thresholds)
+    await rentiqAnalytics.updateThresholds(thresholds)
     
     return NextResponse.json({
       success: true,

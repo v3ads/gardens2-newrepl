@@ -56,8 +56,9 @@ class InstantUIManager {
           break
           
         case 'rentiq':
-          const rentiqModule = await import('./rentiq-analytics-advanced')
-          data = await rentiqModule.RentIQAdvancedAnalytics.getInstance().calculateRentIQ()
+          const rentiqModule = await import('./rentiq-analytics')
+          const rentiqAnalytics = rentiqModule.RentIQAnalytics.getInstance()
+          data = await rentiqAnalytics.calculateRentIQ()
           break
           
         default:
