@@ -103,7 +103,8 @@ export class RentIQAnalytics {
         'Tenant Status': mtd.isOccupied ? 'Current' : 'Vacant',
         'Monthly Rent': mtd.mrrAmount,
         'Market Rent': csvDataMap.get(mtd.unitCode)?.marketRent || mtd.marketRent, // Use CSV market rent (correct) over masterTenantData (NULL)
-        'Unit Type': csvDataMap.get(mtd.unitCode)?.unitType || 'Standard'
+        'Unit Type': csvDataMap.get(mtd.unitCode)?.unitType || null,
+        'Days Vacant': csvDataMap.get(mtd.unitCode)?.daysVacant || 0
       }))
 
       console.log(`[RENTIQ] Found ${masterData.length} units in master tenant data for ${targetDate}`)
@@ -150,38 +151,38 @@ export class RentIQAnalytics {
           .sort((a, b) => a.Unit.localeCompare(b.Unit))
           .slice(0, rentiqPoolCount)
         
+        const thresholdsArray = await this.getThresholdsArray()
+        
         for (const unit of poolUnits) {
           const marketRent = this.parseRent(unit['Market Rent'])
           const monthlyRent = this.parseRent(unit['Monthly Rent'])
+          const daysVacant = unit['Days Vacant'] || 0
+          const unitType = unit['Unit Type']
           
-          const { suggestedRent, tier } = this.calculateSuggestedRent(marketRent)
+          // Assign category based on unit type or market rent
+          const assignedCategory = this.assignCategoryFromUnitType(unitType, marketRent, thresholdsArray)
+          const minimumThreshold = this.getThresholdForCategory(assignedCategory, thresholdsArray)
           
-          // Get actual days vacant from vacancy data
-          const vacancyInfo = vacancyMap.get(unit.Unit)
-          let daysVacant = 0
-          
-          if (vacancyInfo && vacancyInfo.daysVacant) {
-            daysVacant = vacancyInfo.daysVacant
-          } else if (vacancyInfo && vacancyInfo.vacancyStartDate) {
-            // Calculate days vacant from vacancy start date
-            const vacancyStart = new Date(vacancyInfo.vacancyStartDate)
-            const today = new Date(targetDate!)
-            daysVacant = Math.floor((today.getTime() - vacancyStart.getTime()) / (1000 * 60 * 60 * 24))
-          }
+          // Calculate progressive suggested rent
+          const { suggestedRent, tier, capApplied } = this.calculateProgressiveSuggestedRent(
+            marketRent || 0,
+            daysVacant,
+            minimumThreshold
+          )
           
           rentiqUnits.push({
             unit: unit.Unit || '',
             tenant_status: unit['Tenant Status'] || '',
             monthly_rent: monthlyRent,
             market_rent: marketRent,
-            unit_type: unit['Unit Type'] || null,
+            unit_type: unitType,
             suggested_new_rent: suggestedRent,
             pricing_tier: tier,
-            days_vacant: Math.max(0, daysVacant), // Use actual vacancy days
-            assigned_category: 'Standard', // Default category
-            minimum_threshold: suggestedRent * 0.9, // 90% of suggested rent
-            cap_applied: false, // Default no cap
-            days_in_pool: 0 // Default value
+            days_vacant: daysVacant,
+            assigned_category: assignedCategory,
+            minimum_threshold: minimumThreshold,
+            cap_applied: capApplied,
+            days_in_pool: daysVacant
           })
         }
       }
@@ -213,32 +214,133 @@ export class RentIQAnalytics {
   }
 
   /**
-   * Calculate suggested rent based on market rent and pricing tiers
+   * Assign category from unit type or fallback to market rent
    */
-  private calculateSuggestedRent(marketRent: number | null): { suggestedRent: number; tier: 'Tier 1' | 'Tier 2' | 'Tier 3' } {
-    if (!marketRent || marketRent <= 0) {
-      return { suggestedRent: 0, tier: 'Tier 3' }
+  private assignCategoryFromUnitType(unitType: string | null, marketRent: number | null, thresholds: RentIQThreshold[]): string {
+    if (unitType) {
+      const category = this.mapUnitTypeToCategory(unitType)
+      if (category) {
+        return category
+      }
+    }
+    
+    // Fallback to market rent based assignment
+    return this.assignCategoryByMarketRent(marketRent || 0, thresholds)
+  }
+
+  /**
+   * Map unit types to RentIQ categories
+   */
+  private mapUnitTypeToCategory(unitType: string): string | null {
+    const type = unitType.toLowerCase()
+    
+    // Martinique/Nautica = Premium, Monaco = Basic, Capri = Upgraded
+    if ((type.includes('martinique') || type.includes('nautica')) && type.includes('furnished')) {
+      return 'Premium-Furnished'
+    }
+    if ((type.includes('martinique') || type.includes('nautica')) && type.includes('unfurnished')) {
+      return 'Premium-Unfurnished'
+    }
+    if (type.includes('monaco') && type.includes('furnished')) {
+      return 'Basic-Furnished'
+    }
+    if (type.includes('monaco') && type.includes('unfurnished')) {
+      return 'Basic-Unfurnished'
+    }
+    if (type.includes('capri') && type.includes('furnished')) {
+      return 'Upgraded-Furnished'
+    }
+    if (type.includes('capri') && type.includes('unfurnished')) {
+      return 'Upgraded-Unfurnished'
+    }
+    if (type.includes('student')) {
+      return 'Student Unit'
+    }
+    
+    return null
+  }
+
+  /**
+   * Assign category based on exact market rent match (fallback)
+   */
+  private assignCategoryByMarketRent(marketRent: number, thresholds: RentIQThreshold[]): string {
+    // Exact market rent to category mapping
+    const categoryMapping: { [key: number]: string } = {
+      1500: 'Student Unit',
+      1990: 'Basic-Unfurnished',
+      2240: 'Basic-Furnished',
+      2020: 'Upgraded-Unfurnished',
+      2370: 'Upgraded-Furnished',
+      2220: 'Premium-Unfurnished',
+      2570: 'Premium-Furnished'
     }
 
-    if (marketRent > 2000) {
-      // Tier 1: 15% discount
-      return { 
-        suggestedRent: Math.round(marketRent * 0.85), 
-        tier: 'Tier 1' 
-      }
-    } else if (marketRent >= 1700 && marketRent <= 2000) {
-      // Tier 2: 10% discount
-      return { 
-        suggestedRent: Math.round(marketRent * 0.90), 
-        tier: 'Tier 2' 
-      }
-    } else {
-      // Tier 3: No discount, use market rent
-      return { 
-        suggestedRent: marketRent, 
-        tier: 'Tier 3' 
-      }
+    const category = categoryMapping[marketRent]
+    if (category) {
+      return category
     }
+
+    // Fallback: assign based on rent ranges if no exact match
+    if (marketRent >= 2300) return 'Premium-Furnished'
+    if (marketRent >= 2200) return 'Premium-Unfurnished'
+    if (marketRent >= 2000) return 'Upgraded-Furnished'
+    if (marketRent >= 1900) return 'Basic-Furnished'
+    if (marketRent >= 1700) return 'Basic-Unfurnished'
+    return 'Student Unit'
+  }
+
+  /**
+   * Get threshold for category
+   */
+  private getThresholdForCategory(category: string, thresholds: RentIQThreshold[]): number {
+    const threshold = thresholds.find(t => t.category_name === category)
+    return threshold?.min_rent || 1500 // Default minimum
+  }
+
+  /**
+   * Calculate progressive suggested rent with tier-based discounting
+   */
+  private calculateProgressiveSuggestedRent(
+    marketRent: number,
+    daysVacant: number,
+    minimumThreshold: number
+  ): { suggestedRent: number; tier: 'Tier 1' | 'Tier 2' | 'Tier 3'; capApplied: boolean } {
+    
+    // Determine tier based on market rent
+    let tier: 'Tier 1' | 'Tier 2' | 'Tier 3'
+    if (marketRent >= 2300) {
+      tier = 'Tier 1'
+    } else if (marketRent >= 1800) {
+      tier = 'Tier 2'
+    } else {
+      tier = 'Tier 3'
+    }
+
+    // Progressive discount based on days vacant
+    let discount = 0
+    
+    if (daysVacant <= 6) {
+      // Days 1-6
+      discount = tier === 'Tier 1' ? 0.15 : tier === 'Tier 2' ? 0.10 : 0.00
+    } else if (daysVacant <= 13) {
+      // Days 7-13
+      discount = tier === 'Tier 1' ? 0.20 : tier === 'Tier 2' ? 0.15 : 0.05
+    } else if (daysVacant <= 20) {
+      // Days 14-20
+      discount = tier === 'Tier 1' ? 0.25 : tier === 'Tier 2' ? 0.20 : 0.10
+    } else {
+      // Days 21+
+      discount = tier === 'Tier 1' ? 0.30 : tier === 'Tier 2' ? 0.25 : 0.15
+    }
+
+    // Calculate suggested rent
+    const discountedRent = Math.round(marketRent * (1 - discount))
+    
+    // Apply minimum threshold cap
+    const suggestedRent = Math.max(discountedRent, minimumThreshold)
+    const capApplied = suggestedRent > discountedRent
+
+    return { suggestedRent, tier, capApplied }
   }
 
   /**
