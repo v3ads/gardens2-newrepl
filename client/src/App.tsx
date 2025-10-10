@@ -63,20 +63,32 @@ export default function App() {
       });
 
       xhr.addEventListener('load', () => {
+        setUploading(false);
         if (xhr.status === 200) {
           setUploadComplete(true);
           toast({
             title: 'Backup restored successfully',
-            description: 'Your project files have been replaced with the backup. The page will reload in 2 seconds.',
+            description: 'Your project files have been replaced. Reloading page...',
           });
-          // Reload the page after 2 seconds to show updated files
+          // Reload immediately after showing the message
           setTimeout(() => {
             window.location.reload();
-          }, 2000);
+          }, 1000);
         } else {
-          throw new Error('Upload failed');
+          const response = xhr.responseText;
+          let errorMessage = 'Upload failed';
+          try {
+            const json = JSON.parse(response);
+            errorMessage = json.error || json.message || errorMessage;
+          } catch (e) {
+            // Response wasn't JSON
+          }
+          toast({
+            title: 'Upload failed',
+            description: errorMessage,
+            variant: 'destructive',
+          });
         }
-        setUploading(false);
       });
 
       xhr.addEventListener('error', () => {

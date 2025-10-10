@@ -39,6 +39,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
     const projectRoot = process.cwd();
 
     try {
+      console.log(`Extracting ${req.file.originalname} to ${projectRoot}`);
+      
       // Extract tar file to project root, replacing existing files
       await tar.x({
         file: tarFilePath,
@@ -46,9 +48,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
         strip: 0, // Adjust this if your tar has a parent directory
       });
 
+      console.log('Extraction complete');
+
       // Clean up the temporary tar file
       fs.unlinkSync(tarFilePath);
 
+      console.log('Sending success response');
       res.status(200).json({ 
         message: 'Backup restored successfully. Files have been extracted and replaced.',
         filename: req.file.originalname 
