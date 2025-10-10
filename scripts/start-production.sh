@@ -71,9 +71,19 @@ pkill -9 -f "node.*worker" 2>/dev/null || true
 sleep 2
 echo "✅ Old processes cleaned up"
 
+# CRITICAL: Verify DATABASE_URL is available before starting worker
+if [ -z "$DATABASE_URL" ]; then
+    echo "❌ FATAL: DATABASE_URL is not set in environment"
+    echo "❌ Publishing secrets may not be configured properly"
+    exit 1
+fi
+
+echo "✅ DATABASE_URL is configured and ready"
+
 # Start background worker (logs to stdout for Replit Publishing logs)
+# Explicitly pass DATABASE_URL to ensure it's available to the worker
 echo "🎯 Starting background worker..."
-NODE_ENV=production npx tsx worker/sync-worker.ts &
+DATABASE_URL="$DATABASE_URL" NODE_ENV=production npx tsx worker/sync-worker.ts &
 WORKER_PID=$!
 echo "✅ Background worker started (PID: $WORKER_PID)"
 
@@ -95,7 +105,7 @@ while true; do
     # Check if both processes are still running
     if ! kill -0 $WORKER_PID 2>/dev/null; then
         echo "❌ Background worker died, restarting..."
-        NODE_ENV=production npx tsx worker/sync-worker.ts &
+        DATABASE_URL="$DATABASE_URL" NODE_ENV=production npx tsx worker/sync-worker.ts &
         WORKER_PID=$!
         echo "🔄 Worker restarted (PID: $WORKER_PID)"
     fi

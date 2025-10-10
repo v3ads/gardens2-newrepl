@@ -8,8 +8,16 @@ const globalForPrisma = globalThis as unknown as {
 function createPrismaClient() {
   const databaseUrl = process.env.DATABASE_URL
   
+  // CRITICAL: Validate DATABASE_URL before use
+  if (!databaseUrl) {
+    console.error('[PRISMA] FATAL ERROR: DATABASE_URL environment variable is not set!')
+    console.error('[PRISMA] This usually means Publishing secrets are not available to this process')
+    console.error('[PRISMA] Check that DATABASE_URL is configured in Publishing → Secrets')
+    throw new Error('DATABASE_URL is required but not set')
+  }
+  
   // Add connection pooling parameters optimized for Reserved VM deployment
-  const pooledUrl = new URL(databaseUrl!)
+  const pooledUrl = new URL(databaseUrl)
   pooledUrl.searchParams.set('connection_limit', '3')        // Reduced for VM deployment (always-on)
   pooledUrl.searchParams.set('pool_timeout', '60')           // Increased for VM stability  
   pooledUrl.searchParams.set('connect_timeout', '10')        // Faster connection attempt
