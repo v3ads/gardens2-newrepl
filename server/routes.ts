@@ -39,47 +39,59 @@ export async function registerRoutes(app: Express): Promise<Server> {
     const projectRoot = process.cwd();
 
     try {
-      console.log(`Extracting ${req.file.originalname} to ${projectRoot}`);
+      console.log(`[RESTORE] Starting extraction of ${req.file.originalname}`);
+      console.log(`[RESTORE] Tar file path: ${tarFilePath}`);
+      console.log(`[RESTORE] Project root: ${projectRoot}`);
+      console.log(`[RESTORE] File size: ${req.file.size} bytes`);
       
       // First, list what's in the tar file
       const fileList: string[] = [];
+      console.log('[RESTORE] Reading tar contents...');
       await tar.t({
         file: tarFilePath,
-        onentry: (entry) => fileList.push(entry.path)
+        onentry: (entry) => {
+          console.log(`[RESTORE] Found in archive: ${entry.path}`);
+          fileList.push(entry.path);
+        }
       });
-      console.log('Files in tar archive:', fileList.slice(0, 10)); // Show first 10 files
+      console.log(`[RESTORE] Total files in archive: ${fileList.length}`);
       
       // Extract tar file to project root, replacing existing files
+      console.log('[RESTORE] Beginning extraction...');
       await tar.x({
         file: tarFilePath,
         cwd: projectRoot,
-        strip: 0, // Adjust this if your tar has a parent directory
+        strip: 0,
+        onentry: (entry) => {
+          console.log(`[RESTORE] Extracting: ${entry.path}`);
+        }
       });
 
-      console.log('Extraction complete');
+      console.log('[RESTORE] Extraction complete! Files have been replaced.');
 
       // Clean up the temporary tar file
+      console.log('[RESTORE] Cleaning up temp file...');
       fs.unlinkSync(tarFilePath);
 
-      console.log('Sending success response');
+      console.log('[RESTORE] Sending success response to client');
       res.status(200).json({ 
         message: 'Backup restored successfully. Files have been extracted and replaced. Server will restart.',
         filename: req.file.originalname,
         filesExtracted: fileList.length
       });
 
-      // Force server restart to load new files
+      // Force server restart to load new files - give it more time
       setTimeout(() => {
-        console.log('Forcing server restart after extraction...');
+        console.log('[RESTORE] Forcing server restart to load new files...');
         process.exit(0);
-      }, 1000);
+      }, 2000);
     } catch (error) {
       // Clean up on error
       if (fs.existsSync(tarFilePath)) {
         fs.unlinkSync(tarFilePath);
       }
       
-      console.error('Error extracting tar file:', error);
+      console.error('[RESTORE] ERROR during extraction:', error);
       res.status(500).json({ 
         error: 'Failed to extract backup file',
         details: error instanceof Error ? error.message : 'Unknown error'
