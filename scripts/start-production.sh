@@ -37,6 +37,15 @@ echo "⚠️  Skipping automatic migrations (database already manually configure
 # Create logs directory
 mkdir -p /tmp/logs
 
+# CRITICAL: Generate Prisma client (in case deployment didn't)
+echo "🔧 Ensuring Prisma client is generated..."
+if npx prisma generate; then
+    echo "✅ Prisma client ready"
+else
+    echo "❌ Failed to generate Prisma client"
+    exit 1
+fi
+
 # Verify build exists (deployment should have built it)
 echo "🔍 Verifying production build exists..."
 if [ ! -f ".next/prerender-manifest.json" ]; then
