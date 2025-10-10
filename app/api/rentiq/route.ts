@@ -1,6 +1,8 @@
 import { NextResponse } from 'next/server'
-import { rentiqAdvancedAnalytics } from '../../../lib/rentiq-analytics-advanced'
+import { RentIQAnalytics } from '../../../lib/rentiq-analytics'
 import { cache } from '../../../lib/cache'
+
+const rentiqAnalytics = RentIQAnalytics.getInstance()
 
 // Request deduplication to prevent multiple simultaneous calculations
 const activeRequests = new Map<string, Promise<any>>()
@@ -44,7 +46,7 @@ export async function GET(request: Request) {
     console.log(`[RENTIQ_API] ${recalculate ? 'Recalculating' : 'Computing fresh'} RentIQ for ${targetDate || 'latest available date'}`)
     
     // Start calculation and store promise for deduplication
-    const calculationPromise = rentiqAdvancedAnalytics.calculateRentIQ(targetDate)
+    const calculationPromise = rentiqAnalytics.calculateRentIQ(targetDate)
     activeRequests.set(cacheKey, calculationPromise)
     
     try {
@@ -79,7 +81,7 @@ export async function POST(request: Request) {
     const { date } = await request.json()
     const targetDate = date || new Date().toISOString().split('T')[0]
     
-    const results = await rentiqAdvancedAnalytics.calculateRentIQ(targetDate)
+    const results = await rentiqAnalytics.calculateRentIQ(targetDate)
     
     return NextResponse.json({
       status: 'success',
