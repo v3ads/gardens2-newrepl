@@ -376,7 +376,13 @@ async function buildUnitsLeasingMasterInternal(
       if (masterCSVData?.leaseEndDate) {
         const convertedDate = EasternTimeManager.toEasternDate(masterCSVData.leaseEndDate)
         if (convertedDate === null) {
-          console.warn(`[OCCUPANCY_ANALYTICS] Invalid lease end date for unit ${unitCode}, skipping date conversion`)
+          console.error({
+            event: 'ANALYTICS_INVALID_DATE_SKIPPED',
+            context: 'buildUnitsLeasingMaster',
+            field: 'leaseEndDate',
+            unitCode: unitCode,
+            rawValue: masterCSVData.leaseEndDate
+          })
         } else {
           masterLeaseEndDate = convertedDate
         }
@@ -1093,7 +1099,14 @@ export async function getMoveInsMTD(asOf: string = 'latest'): Promise<MoveInsMTD
         // DEFENSIVE: Handle invalid dates from AppFolio
         const moveInDateStr = EasternTimeManager.toEasternDate(moveInDate)
         if (!moveInDateStr) {
-          console.warn(`[MOVE_INS_MTD] Invalid move-in date for lease ${lease.LeaseUuid}, skipping`)
+          console.error({
+            event: 'ANALYTICS_INVALID_DATE_SKIPPED',
+            context: 'getMoveInsMTD',
+            field: 'MoveIn',
+            leaseId: lease.LeaseUuid,
+            rawValue: moveInStr,
+            parsedDate: moveInDate
+          })
           continue
         }
 

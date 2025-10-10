@@ -16,12 +16,55 @@ import { addDays, parseISO, format } from 'date-fns'
 export class EasternTimeManager {
   private static readonly EASTERN_TIMEZONE = 'America/New_York'
   
+  // TELEMETRY: Track invalid date occurrences for production monitoring
+  private static invalidDateCount = 0
+  private static lastInvalidDateLog = 0
+  
   /**
    * DEFENSIVE: Validate if a date is valid before timezone conversion
    * Prevents RangeError from corrupt AppFolio data
    */
   private static isValidDate(date: Date): boolean {
     return date instanceof Date && !isNaN(date.getTime())
+  }
+  
+  /**
+   * TELEMETRY: Log invalid date with structured data for monitoring
+   * Uses throttling to prevent log spam while maintaining visibility
+   */
+  private static logInvalidDate(context: string, date: any, additionalInfo?: any): void {
+    this.invalidDateCount++
+    const now = Date.now()
+    
+    // Log every occurrence, but throttle detailed output to once per minute
+    const shouldLogDetails = (now - this.lastInvalidDateLog) > 60000
+    
+    if (shouldLogDetails) {
+      console.error({
+        event: 'INVALID_DATE_DETECTED',
+        context,
+        invalidValue: date,
+        valueType: typeof date,
+        totalInvalidDatesThisSession: this.invalidDateCount,
+        timestamp: new Date().toISOString(),
+        ...additionalInfo
+      })
+      this.lastInvalidDateLog = now
+    } else {
+      // Lightweight log for monitoring without spam
+      console.warn(`[INVALID_DATE] ${context}: count=${this.invalidDateCount}`)
+    }
+  }
+  
+  /**
+   * TELEMETRY: Get invalid date statistics
+   * Use this for health checks and monitoring dashboards
+   */
+  static getInvalidDateStats(): { count: number; lastLoggedAt: number } {
+    return {
+      count: this.invalidDateCount,
+      lastLoggedAt: this.lastInvalidDateLog
+    }
   }
   
   /**
@@ -42,7 +85,7 @@ export class EasternTimeManager {
    */
   static toDateString(date: Date): string | null {
     if (!this.isValidDate(date)) {
-      console.warn('[TIMEZONE_UTILS] Invalid date provided to toDateString:', date)
+      this.logInvalidDate('toDateString', date)
       return null
     }
     return formatInTimeZone(date, this.EASTERN_TIMEZONE, 'yyyy-MM-dd')
@@ -75,7 +118,7 @@ export class EasternTimeManager {
    */
   static toEasternDate(date: Date): string | null {
     if (!this.isValidDate(date)) {
-      console.warn('[TIMEZONE_UTILS] Invalid date provided to toEasternDate:', date)
+      this.logInvalidDate('toEasternDate', date)
       return null
     }
     return formatInTimeZone(date, this.EASTERN_TIMEZONE, 'yyyy-MM-dd')
@@ -88,7 +131,7 @@ export class EasternTimeManager {
    */
   static toEasternDateTime(date: Date): Date | null {
     if (!this.isValidDate(date)) {
-      console.warn('[TIMEZONE_UTILS] Invalid date provided to toEasternDateTime:', date)
+      this.logInvalidDate('toEasternDateTime', date)
       return null
     }
     return toZonedTime(date, this.EASTERN_TIMEZONE)

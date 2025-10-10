@@ -20,7 +20,9 @@ The backend uses Next.js API routes for RESTful endpoints covering analytics, da
 - **Deployment**: The system operates on a Replit Reserved VM with a concurrent process architecture for the Next.js frontend and a dedicated background worker.
 - **Database**: A dual-database approach is used: Neon-hosted PostgreSQL for application data, KPIs, and sync management (managed by Prisma), and Better-SQLite3 for raw report storage and high-performance data processing. Both Drizzle schema (`shared/schema.ts`) and Prisma schema (`prisma/schema.prisma`) are utilized, with Prisma being the authoritative source. Schema changes are managed via migrations (`npm run db:push`), and `prisma db pull` is prohibited on production.
 - **Job Queue**: A PostgreSQL-backed durable job queue uses `SKIP LOCKED` for concurrency with a 5-second polling interval. Jobs follow a QUEUED → RUNNING → SUCCEEDED/FAILED lifecycle, with automatic retry and deduplication. Failed sync jobs trigger automated email notifications.
-- **Critical Reliability Fixes**: Implemented solutions for transaction timeouts in analytics, prevention of "zombie" sync locks, and elimination of worker polling recursion bugs.
+- **Critical Reliability Fixes**: Implemented solutions for transaction timeouts in analytics, prevention of "zombie" sync locks, elimination of worker polling recursion bugs, ghost lock detection via PID-based orphan cleanup, and defensive date validation for corrupt AppFolio data.
+- **Ghost Lock Prevention**: Three-layer defense system prevents orphaned locks from dead workers (graceful shutdown cleanup, startup orphan detection via `process.kill(pid, 0)` health checks, and acquisition-time validation). See `OPERATIONS_RUNBOOK.md` for operational procedures.
+- **Data Quality**: Invalid dates from AppFolio are handled defensively with structured telemetry logging. EasternTimeManager returns null for corrupt dates instead of throwing RangeError, with analytics code handling null gracefully.
 
 # External Dependencies
 
