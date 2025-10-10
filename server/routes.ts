@@ -41,6 +41,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       console.log(`Extracting ${req.file.originalname} to ${projectRoot}`);
       
+      // First, list what's in the tar file
+      const fileList: string[] = [];
+      await tar.t({
+        file: tarFilePath,
+        onentry: (entry) => fileList.push(entry.path)
+      });
+      console.log('Files in tar archive:', fileList.slice(0, 10)); // Show first 10 files
+      
       // Extract tar file to project root, replacing existing files
       await tar.x({
         file: tarFilePath,
@@ -58,6 +66,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
         message: 'Backup restored successfully. Files have been extracted and replaced.',
         filename: req.file.originalname 
       });
+
+      // Restart the server after a short delay to allow response to be sent
+      setTimeout(() => {
+        console.log('Restarting server to load new files...');
+        process.exit(0); // The process manager will restart the server
+      }, 500);
     } catch (error) {
       // Clean up on error
       if (fs.existsSync(tarFilePath)) {
