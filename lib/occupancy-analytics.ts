@@ -241,8 +241,28 @@ async function buildUnitsLeasingMasterInternal(
               })
             }
           }
-        } catch (error) {
+        } catch (error: any) {
           console.error(`[OCCUPANCY_ANALYTICS] Error processing unit ${unitCode}:`, error)
+          
+          // CRITICAL FIX: Re-throw database errors to abort transaction cleanly
+          // Database errors indicate transaction-level failures (constraints, timeouts, connection issues)
+          // If we swallow them, the transaction stays in aborted state and subsequent queries fail
+          const isDatabaseError = 
+            error?.code?.startsWith?.('P') ||  // Prisma error codes
+            error?.message?.includes?.('transaction') ||
+            error?.message?.includes?.('database') ||
+            error?.message?.includes?.('Prisma') ||
+            error?.message?.includes?.('SQL') ||
+            error?.code === 'ECONNREFUSED' ||
+            error?.code === 'ETIMEDOUT'
+          
+          if (isDatabaseError) {
+            console.error(`[OCCUPANCY_ANALYTICS] 🚨 Database error detected - aborting transaction to prevent corruption`)
+            throw error  // Re-throw to abort transaction cleanly
+          }
+          
+          // For application-level errors (data parsing, validation), continue processing
+          console.warn(`[OCCUPANCY_ANALYTICS] ⚠️ Skipping unit ${unitCode} due to application error`)
         }
       }
 
