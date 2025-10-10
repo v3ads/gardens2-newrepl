@@ -1236,6 +1236,50 @@ export class DailySyncManager {
       const errorMessage = error instanceof Error ? error.message : String(error)
       
       console.error(`[${syncType.toUpperCase()}_SYNC] ❌ OPTIMIZED SYNC FAILED:`, errorMessage)
+      
+      // CRITICAL FIX: Don't fallback for constraint violations or analytics failures
+      // These indicate data integrity issues that legacy sync won't fix
+      const isConstraintViolation = errorMessage.includes('Unique constraint failed') || 
+                                      errorMessage.includes('unique constraint') ||
+                                      errorMessage.includes('Cannot mark sync as successful with stale analytics')
+      
+      if (isConstraintViolation) {
+        console.error(`[${syncType.toUpperCase()}_SYNC] ❌ Data integrity error detected - NOT falling back to legacy`)
+        console.error(`[${syncType.toUpperCase()}_SYNC] This likely indicates concurrent sync collision or zombie job data`)
+        
+        // Send failure notification
+        try {
+          await failureNotificationManager.reportFailure({
+            type: 'sync_failure',
+            title: `${syncType.charAt(0).toUpperCase() + syncType.slice(1)} Sync Failed - Data Integrity Error`,
+            description: `Sync failed due to data integrity constraint violation. This may indicate concurrent sync collision or partial data from a previous failed sync.`,
+            error,
+            context: {
+              syncType: `optimized_${syncType}`,
+              errorType: 'constraint_violation',
+              duration: Math.round(duration / 1000 / 60)
+            },
+            recoveryActions: [
+              'Check for zombie sync processes',
+              'Verify no concurrent syncs are running',
+              'Consider manual data cleanup if needed',
+              'Retry sync after verification'
+            ]
+          })
+        } catch (notificationError) {
+          console.error('[DAILY_SYNC] Failed to send failure notification:', notificationError)
+        }
+        
+        // Return failure - don't fallback
+        return {
+          success: false,
+          duration,
+          totalRecords: 0,
+          error: `Data integrity error: ${errorMessage}`
+        }
+      }
+      
+      // For other errors, fallback to legacy sync
       console.log(`[${syncType.toUpperCase()}_SYNC] 🔄 Falling back to legacy sync...`)
       
       // Send failure notification for optimized sync failure
@@ -1274,7 +1318,20 @@ export class DailySyncManager {
         lockAcquired = false // Prevent double release in finally
       }
       
-      return this.performLegacySync(syncType)
+      const fallbackResult = await this.performLegacySync(syncType)
+      
+      // CRITICAL FIX: If legacy sync processes 0 records after optimized failed, mark as failure
+      if (fallbackResult.success && fallbackResult.totalRecords === 0) {
+        console.warn(`[${syncType.toUpperCase()}_SYNC] ⚠️ Legacy fallback processed 0 records after optimized failure - marking as FAILED`)
+        return {
+          success: false,
+          duration: fallbackResult.duration,
+          totalRecords: 0,
+          error: `Optimized sync failed (${errorMessage}), legacy fallback processed 0 records - likely data already exists from partial sync`
+        }
+      }
+      
+      return fallbackResult
       
     } finally {
       this.isSyncing = false
