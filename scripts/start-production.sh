@@ -83,7 +83,7 @@ echo "✅ DATABASE_URL is configured and ready"
 # Start background worker (logs to stdout for Replit Publishing logs)
 # Explicitly pass DATABASE_URL to ensure it's available to the worker
 echo "🎯 Starting background worker..."
-DATABASE_URL="$DATABASE_URL" NODE_ENV=production npx tsx worker/sync-worker.ts &
+DATABASE_URL="$DATABASE_URL" NODE_ENV=production npx tsx worker/sync-worker.ts 2>&1 | sed 's/^/[WORKER] /' &
 WORKER_PID=$!
 echo "✅ Background worker started (PID: $WORKER_PID)"
 
@@ -92,7 +92,7 @@ sleep 2
 
 # Start Next.js application (logs to stdout for Replit Publishing logs)
 echo "🌐 Starting Next.js application..."
-npm start &
+npm start 2>&1 | sed 's/^/[NEXTJS] /' &
 NEXTJS_PID=$!
 echo "✅ Next.js application started (PID: $NEXTJS_PID)"
 
@@ -105,7 +105,7 @@ while true; do
     # Check if both processes are still running
     if ! kill -0 $WORKER_PID 2>/dev/null; then
         echo "❌ Background worker died, restarting..."
-        DATABASE_URL="$DATABASE_URL" NODE_ENV=production npx tsx worker/sync-worker.ts &
+        DATABASE_URL="$DATABASE_URL" NODE_ENV=production npx tsx worker/sync-worker.ts 2>&1 | sed 's/^/[WORKER] /' &
         WORKER_PID=$!
         echo "🔄 Worker restarted (PID: $WORKER_PID)"
     fi
@@ -115,7 +115,7 @@ while true; do
         # Kill any lingering Node processes on port 5000
         pkill -f "next start" 2>/dev/null || true
         sleep 2
-        npm start &
+        npm start 2>&1 | sed 's/^/[NEXTJS] /' &
         NEXTJS_PID=$!
         echo "🔄 Next.js restarted (PID: $NEXTJS_PID)"
     fi
