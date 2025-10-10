@@ -156,9 +156,10 @@ export class RentIQAnalytics {
       const rentiqUnits: RentIQUnit[] = []
       
       if (rentiqActive && vacantUnits.length > 0) {
-        // Sort vacant units by some criteria (e.g., by unit number) and take the pool count
+        // CRITICAL: Sort vacant units by HIGHEST days vacant first (descending order)
+        // This ensures units with longest vacancy get priority for progressive discounting
         const poolUnits = vacantUnits
-          .sort((a, b) => a.Unit.localeCompare(b.Unit))
+          .sort((a, b) => (b['Days Vacant'] || 0) - (a['Days Vacant'] || 0))
           .slice(0, rentiqPoolCount)
         
         const thresholdsArray = await this.getThresholdsArray()
