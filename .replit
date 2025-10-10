@@ -47,5 +47,5 @@ externalPort = 80
 
 [deployment]
 deploymentTarget = "vm"
-build = ["bash", "-c", "echo 'Skipping auto npm install' && bash scripts/deploy-build.sh"]
+build = ["bash", "-c", "npm install --production && npx prisma generate && npm run build"]
 run = ["bash", "scripts/start-production.sh"]
