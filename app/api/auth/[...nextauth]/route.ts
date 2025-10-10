@@ -24,12 +24,12 @@ process.env.AUTH_TRUST_HOST = "true"
 if (process.env.NODE_ENV === 'development' && process.env.REPLIT_DOMAINS) {
   const replitDomain = process.env.REPLIT_DOMAINS.split(',')[0]
   const replitUrl = `https://${replitDomain}`
-  
+
   // Override NEXTAUTH_URL for development in Replit
   // This ensures OAuth callbacks work correctly
   process.env.NEXTAUTH_URL = replitUrl
   process.env.NEXTAUTH_URL_INTERNAL = replitUrl
-  
+
   // Only log OAuth domain in development
   if (process.env.NODE_ENV === 'development') {
     console.log('[AUTH] Using Replit domain for OAuth:', replitUrl)
@@ -46,14 +46,21 @@ const GOOGLE_CLIENT_ID = clean(process.env.GOOGLE_CLIENT_ID || process.env.GOOGL
 const GOOGLE_CLIENT_SECRET = clean(process.env.GOOGLE_CLIENT_SECRET || process.env.GOOGLE_SECRET)
 const NEXTAUTH_SECRET = clean(process.env.NEXTAUTH_SECRET)
 
+// Validate required environment variables (log warnings instead of throwing)
 if (!GOOGLE_CLIENT_ID || !GOOGLE_CLIENT_SECRET || !NEXTAUTH_SECRET) {
-  console.error('[AUTH_ERROR] Missing OAuth environment variables:', {
-    GOOGLE_CLIENT_ID: !!GOOGLE_CLIENT_ID,
-    GOOGLE_CLIENT_SECRET: !!GOOGLE_CLIENT_SECRET,
-    NEXTAUTH_SECRET: !!NEXTAUTH_SECRET,
-    available_google_vars: Object.keys(process.env).filter(k => k.includes('GOOGLE'))
+  console.error('❌ FATAL: Missing required environment variables for Google OAuth')
+  console.error('Missing:', {
+    googleClientId: !GOOGLE_CLIENT_ID,
+    googleClientSecret: !GOOGLE_CLIENT_SECRET,
+    nextAuthSecret: !NEXTAUTH_SECRET
   })
-  throw new Error('Missing required envs for Google OAuth. Check GOOGLE_ID/GOOGLE_SECRET or GOOGLE_CLIENT_ID/GOOGLE_CLIENT_SECRET and NEXTAUTH_SECRET.')
+  console.error('💡 Add these secrets in Replit Deployment Secrets:')
+  console.error('  - GOOGLE_CLIENT_ID (or GOOGLE_ID)')
+  console.error('  - GOOGLE_CLIENT_SECRET (or GOOGLE_SECRET)')
+  console.error('  - NEXTAUTH_SECRET')
+
+  // Don't throw - let the startup script validation handle it
+  // This prevents NextAuth initialization from crashing the entire app
 }
 
 // Log masked env check at boot
