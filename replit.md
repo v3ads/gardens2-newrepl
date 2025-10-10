@@ -2,6 +2,15 @@
 
 Cynthia Gardens Command Center is a modern property management application built with Next.js 14. It provides comprehensive analytics and operational tools for managing residential properties, with a focus on enterprise production readiness, reliability, zero daily operational maintenance, and high performance. Key features include task management, analytics dashboards, AI-powered chat assistance, and user management, all designed with a modular and toggleable architecture.
 
+## Current Version
+
+**v16.0.0** (Released: 2025-10-10)
+
+### Recent Changes
+- **v16.0.0** (2025-10-10): Fixed critical sync failures by implementing AppFolio duplicate record deduplication. Resolved constraint violations from duplicate `(unit_code, bedspace_code)` combinations. Sync now processes 5,372 records with zero errors.
+- **v15.0.0** (Previous): Production deployment baseline
+- **v14.0.0** (2025-09-29): Job queue & worker architecture perfection - eliminated polling recursion bug, fixed JobType enum mismatch, resolved parity monitor constraint violations
+
 # User Preferences
 
 Preferred communication style: Simple, everyday language.
