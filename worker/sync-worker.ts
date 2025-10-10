@@ -202,8 +202,12 @@ class SyncWorker {
         await jobQueueService.failJob(job.id, jobRunId, errorMessage, durationMs)
       }
 
-      // Send error notification for critical failures
-      await this.sendErrorNotification(job, error)
+      // Only send worker notification for non-sync jobs (EMAIL_SEND, DATA_CLEANUP, etc.)
+      // Sync jobs (DAILY_SYNC, WEBHOOK_SYNC, MANUAL_SYNC) are handled by DailySyncManager
+      const isSyncJob = [JobType.DAILY_SYNC, JobType.WEBHOOK_SYNC, JobType.MANUAL_SYNC].includes(job.type as JobType)
+      if (!isSyncJob) {
+        await this.sendErrorNotification(job, error)
+      }
     }
   }
 
