@@ -17,6 +17,14 @@ export class EasternTimeManager {
   private static readonly EASTERN_TIMEZONE = 'America/New_York'
   
   /**
+   * DEFENSIVE: Validate if a date is valid before timezone conversion
+   * Prevents RangeError from corrupt AppFolio data
+   */
+  private static isValidDate(date: Date): boolean {
+    return date instanceof Date && !isNaN(date.getTime())
+  }
+  
+  /**
    * Get current Eastern date as YYYY-MM-DD string
    * Use this for all sync operations and snapshot dates
    * FIXED: No longer uses string parsing that causes timezone issues
@@ -30,8 +38,13 @@ export class EasternTimeManager {
    * CONVENIENCE WRAPPER: Convert Date to Eastern YYYY-MM-DD string
    * Use this instead of `date.toISOString().split('T')[0]` 
    * This is the standard date formatter for all data ingestion and analytics
+   * DEFENSIVE: Returns null for invalid dates instead of throwing
    */
-  static toDateString(date: Date): string {
+  static toDateString(date: Date): string | null {
+    if (!this.isValidDate(date)) {
+      console.warn('[TIMEZONE_UTILS] Invalid date provided to toDateString:', date)
+      return null
+    }
     return formatInTimeZone(date, this.EASTERN_TIMEZONE, 'yyyy-MM-dd')
   }
   
@@ -58,16 +71,26 @@ export class EasternTimeManager {
   /**
    * Convert any date to Eastern timezone date string (YYYY-MM-DD)
    * FIXED: No longer uses string parsing
+   * DEFENSIVE: Returns null for invalid dates instead of throwing
    */
-  static toEasternDate(date: Date): string {
+  static toEasternDate(date: Date): string | null {
+    if (!this.isValidDate(date)) {
+      console.warn('[TIMEZONE_UTILS] Invalid date provided to toEasternDate:', date)
+      return null
+    }
     return formatInTimeZone(date, this.EASTERN_TIMEZONE, 'yyyy-MM-dd')
   }
   
   /**
    * Convert any date to Eastern timezone datetime
    * FIXED: Proper timezone conversion without string round-trips
+   * DEFENSIVE: Returns null for invalid dates instead of throwing
    */
-  static toEasternDateTime(date: Date): Date {
+  static toEasternDateTime(date: Date): Date | null {
+    if (!this.isValidDate(date)) {
+      console.warn('[TIMEZONE_UTILS] Invalid date provided to toEasternDateTime:', date)
+      return null
+    }
     return toZonedTime(date, this.EASTERN_TIMEZONE)
   }
   

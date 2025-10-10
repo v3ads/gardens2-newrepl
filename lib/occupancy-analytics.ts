@@ -79,12 +79,16 @@ export async function buildUnitsLeasingMaster(
       if (ingestDates.length > 0) {
         const latestIngestDate = new Date(Math.max(...ingestDates.map(d => d.getTime())))
         // CRITICAL FIX: Convert UTC timestamp to Eastern calendar date for consistency
-        today = EasternTimeManager.toEasternDate(latestIngestDate)
+        const convertedToday = EasternTimeManager.toEasternDate(latestIngestDate)
+        if (!convertedToday) {
+          throw new Error('[OCCUPANCY_ANALYTICS] Failed to convert latest ingestion date to Eastern time')
+        }
+        today = convertedToday
         console.log(`[OCCUPANCY_ANALYTICS] ✅ Using latest raw data ingestion date (Eastern): ${today}`)
-        console.log(`[OCCUPANCY_ANALYTICS] Raw data available: Units(${EasternTimeManager.toEasternDate(latestUnit._max.ingestedAt!)}), Leases(${EasternTimeManager.toEasternDate(latestLease._max.ingestedAt!)}), Tenants(${EasternTimeManager.toEasternDate(latestTenant._max.ingestedAt!)}), RentRoll(${EasternTimeManager.toEasternDate(latestRentRoll._max.ingestedAt!)})`)
+        console.log(`[OCCUPANCY_ANALYTICS] Raw data available: Units(${EasternTimeManager.toEasternDate(latestUnit._max.ingestedAt!) || 'N/A'}), Leases(${EasternTimeManager.toEasternDate(latestLease._max.ingestedAt!) || 'N/A'}), Tenants(${EasternTimeManager.toEasternDate(latestTenant._max.ingestedAt!) || 'N/A'}), RentRoll(${EasternTimeManager.toEasternDate(latestRentRoll._max.ingestedAt!) || 'N/A'})`)
         
         // Warn if there's significant skew between table ingestion dates (>1 day)
-        const easternDates = ingestDates.map(d => EasternTimeManager.toEasternDate(d))
+        const easternDates = ingestDates.map(d => EasternTimeManager.toEasternDate(d)).filter(Boolean) as string[]
         const uniqueDates = [...new Set(easternDates)]
         if (uniqueDates.length > 1) {
           const minDate = uniqueDates.sort()[0]
@@ -367,7 +371,16 @@ async function buildUnitsLeasingMasterInternal(
         select: { leaseEndDate: true }
       })
       // ARCHITECTURE FIX: Use Eastern timezone for lease end date comparisons
-      const masterLeaseEndDate = masterCSVData?.leaseEndDate ? EasternTimeManager.toEasternDate(masterCSVData.leaseEndDate) : null
+      // DEFENSIVE: Handle invalid dates from AppFolio (returns null for corrupt dates)
+      let masterLeaseEndDate: string | null = null
+      if (masterCSVData?.leaseEndDate) {
+        const convertedDate = EasternTimeManager.toEasternDate(masterCSVData.leaseEndDate)
+        if (convertedDate === null) {
+          console.warn(`[OCCUPANCY_ANALYTICS] Invalid lease end date for unit ${unitCode}, skipping date conversion`)
+        } else {
+          masterLeaseEndDate = convertedDate
+        }
+      }
 
       // Also check rent roll status for occupancy - UNIFIED: Only "Vacant" = vacant
       const rentStatus = rentData?.Status || ''
@@ -1045,6 +1058,11 @@ export async function getMoveInsMTD(asOf: string = 'latest'): Promise<MoveInsMTD
     const prevMonthStartStr = EasternTimeManager.toEasternDate(prevMonthStart)
     const prevMonthEndStr = EasternTimeManager.toEasternDate(prevMonthEnd)
 
+    // DEFENSIVE: These should never be null, but check for safety
+    if (!monthStartStr || !prevMonthStartStr || !prevMonthEndStr) {
+      throw new Error('[MOVE_INS_MTD] Failed to convert month boundaries to Eastern dates')
+    }
+
     console.log(`[MOVE_INS_MTD] Month boundaries: ${monthStartStr} to ${snapshotDate}, prev: ${prevMonthStartStr} to ${prevMonthEndStr}`)
 
     // Get all lease history records (each record is a single lease)
@@ -1072,7 +1090,12 @@ export async function getMoveInsMTD(asOf: string = 'latest'): Promise<MoveInsMTD
         if (!moveInDate) continue
 
         // ARCHITECTURE FIX: Use Eastern timezone for move-in date comparisons
+        // DEFENSIVE: Handle invalid dates from AppFolio
         const moveInDateStr = EasternTimeManager.toEasternDate(moveInDate)
+        if (!moveInDateStr) {
+          console.warn(`[MOVE_INS_MTD] Invalid move-in date for lease ${lease.LeaseUuid}, skipping`)
+          continue
+        }
 
         // Check if move-in is in current month-to-date
         if (moveInDateStr >= monthStartStr && moveInDateStr <= snapshotDate) {

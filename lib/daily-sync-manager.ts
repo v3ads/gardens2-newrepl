@@ -242,6 +242,44 @@ export class DailySyncManager {
       const lockId = 'daily_sync_lock'
       const expiresAt = new Date(Date.now() + 30 * 60 * 1000) // 30 minutes TTL
       
+      // CRITICAL FIX: Check for orphaned locks from dead processes BEFORE trying to acquire
+      const existingLock = await withPrismaRetry(() => 
+        prisma.$queryRaw<[{owner: string, expires_at: Date}]>`
+          SELECT owner, expires_at FROM sync_locks WHERE id = ${lockId} LIMIT 1
+        `
+      )
+      
+      if (existingLock.length > 0) {
+        const lock = existingLock[0]
+        const isExpired = new Date(lock.expires_at) < new Date()
+        
+        // Extract PID from lock owner (format: process-PID-timestamp-random)
+        const ownerMatch = lock.owner.match(/process-(\d+)-/)
+        
+        if (ownerMatch && !isExpired) {
+          const pid = parseInt(ownerMatch[1])
+          let processExists = false
+          
+          try {
+            // Check if process exists (signal 0 doesn't kill, just checks)
+            process.kill(pid, 0)
+            processExists = true
+            console.log(`[DAILY_SYNC] 🔍 Lock owner process ${pid} is still alive`)
+          } catch (err) {
+            console.log(`[DAILY_SYNC] 💀 Lock owner process ${pid} is dead, cleaning up orphaned lock`)
+          }
+          
+          // Clean up orphaned lock from dead process
+          if (!processExists) {
+            console.log(`[DAILY_SYNC] 🧹 Force-releasing orphaned lock from dead process ${pid}`)
+            await withPrismaRetry(() => 
+              prisma.$executeRaw`DELETE FROM sync_locks WHERE id = ${lockId} AND owner = ${lock.owner}`
+            )
+            console.log(`[DAILY_SYNC] ✅ Orphaned lock cleaned up, will retry acquisition`)
+          }
+        }
+      }
+      
       // Try to acquire lock (upsert with conditional logic)
       const upsertResult = await withPrismaRetry(() => 
         prisma.$executeRaw`

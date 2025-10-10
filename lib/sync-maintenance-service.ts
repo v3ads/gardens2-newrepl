@@ -34,11 +34,56 @@ export class SyncMaintenanceService {
         locksCleared = deletedLocks.count
         console.log(`[SYNC_MAINTENANCE] ✅ Force-cleared ${locksCleared} lock(s)`)
       } else {
-        // Worker startup: Only clean expired locks (conservative)
-        const syncManager = DailySyncManager.getInstance()
-        await syncManager.cleanupExpiredLocks()
-        locksCleared = 1
-        console.log('[SYNC_MAINTENANCE] ✅ Expired lock cleanup completed')
+        // Worker startup: Clean BOTH expired AND orphaned locks from dead processes
+        const { prisma } = await import('./prisma')
+        
+        // First check if there are any locks at all
+        const existingLocks = await prisma.syncLock.findMany({
+          where: { id: 'daily_sync_lock' }
+        })
+        
+        if (existingLocks.length === 0) {
+          console.log('[SYNC_MAINTENANCE] ✅ No locks to clean')
+          locksCleared = 0
+        } else {
+          // Extract process ID from lock owner (format: process-PID-timestamp-random)
+          const lock = existingLocks[0]
+          const ownerMatch = lock.owner.match(/process-(\d+)-/)
+          
+          if (ownerMatch) {
+            const pid = parseInt(ownerMatch[1])
+            let processExists = false
+            
+            try {
+              // Check if process exists (kill with signal 0 doesn't kill, just checks)
+              process.kill(pid, 0)
+              processExists = true
+              console.log(`[SYNC_MAINTENANCE] 🔍 Lock owner process ${pid} is still running`)
+            } catch (err) {
+              console.log(`[SYNC_MAINTENANCE] 💀 Lock owner process ${pid} is dead, cleaning up orphaned lock`)
+            }
+            
+            // Clean up if process is dead OR lock is expired
+            const isExpired = new Date(lock.expiresAt) < new Date()
+            if (!processExists || isExpired) {
+              const deletedLocks = await prisma.syncLock.deleteMany({
+                where: { id: 'daily_sync_lock' }
+              })
+              locksCleared = deletedLocks.count
+              console.log(`[SYNC_MAINTENANCE] ✅ Cleaned up ${locksCleared} ${!processExists ? 'orphaned' : 'expired'} lock(s)`)
+            } else {
+              console.log(`[SYNC_MAINTENANCE] ℹ️ Lock is owned by active process ${pid}, keeping it`)
+            }
+          } else {
+            // Can't parse owner, assume it's orphaned and clean it
+            console.log(`[SYNC_MAINTENANCE] ⚠️ Could not parse lock owner format, assuming orphaned`)
+            const deletedLocks = await prisma.syncLock.deleteMany({
+              where: { id: 'daily_sync_lock' }
+            })
+            locksCleared = deletedLocks.count
+            console.log(`[SYNC_MAINTENANCE] ✅ Cleaned up ${locksCleared} unparseable lock(s)`)
+          }
+        }
       }
     } catch (error) {
       console.error('[SYNC_MAINTENANCE] ⚠️ Error during lock cleanup (non-fatal):', error)

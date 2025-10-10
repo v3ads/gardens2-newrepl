@@ -109,6 +109,20 @@ class SyncWorker {
         await Promise.race([shutdownPromise, timeoutPromise])
       }
 
+      // CRITICAL FIX: Clean up any orphaned sync locks before exit
+      console.log(`[SYNC_WORKER] 🧹 Cleaning up sync locks before shutdown...`)
+      try {
+        const { prisma } = await import('../lib/prisma')
+        const deletedLocks = await prisma.syncLock.deleteMany({
+          where: { id: 'daily_sync_lock' }
+        })
+        if (deletedLocks.count > 0) {
+          console.log(`[SYNC_WORKER] ✅ Cleaned up ${deletedLocks.count} sync lock(s) during shutdown`)
+        }
+      } catch (error) {
+        console.error(`[SYNC_WORKER] ⚠️ Error cleaning locks during shutdown:`, error)
+      }
+
       console.log(`[SYNC_WORKER] 👋 Worker ${this.config.workerId} shutdown complete`)
       process.exit(0)
     }
