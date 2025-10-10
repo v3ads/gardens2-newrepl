@@ -13,16 +13,14 @@ echo "📊 Environment: production"
 echo "📍 Working directory: $(pwd)"
 echo "🕐 Started at: $(date)"
 
-# MIGRATIONS TEMPORARILY DISABLED - Database already manually fixed
-echo "⚠️  Skipping automatic migrations (database already manually configured)"
-# Uncomment the block below to re-enable automatic migrations
-# echo "🔄 Running Prisma migrations..."
-# if npx prisma migrate deploy; then
-#     echo "✅ Database migrations completed successfully"
-# else
-#     echo "❌ Database migration failed - exiting to prevent data issues"
-#     exit 1
-# fi
+# Run database migrations for production
+echo "🔄 Running Prisma migrations..."
+if npx prisma migrate deploy; then
+    echo "✅ Database migrations completed successfully"
+else
+    echo "❌ Database migration failed - exiting to prevent data issues"
+    exit 1
+fi
 
 # SCHEMA DRIFT CHECK DISABLED - Manual fixes already applied
 # echo "🔍 Checking for schema drift..."
@@ -85,18 +83,18 @@ pkill -9 -f "node.*worker" 2>/dev/null || true
 sleep 2
 echo "✅ Old processes cleaned up"
 
-# Start background worker
+# Start background worker (logs to stdout for Replit Publishing logs)
 echo "🎯 Starting background worker..."
-NODE_ENV=production npx tsx worker/sync-worker.ts > /tmp/logs/worker.log 2>&1 &
+NODE_ENV=production npx tsx worker/sync-worker.ts &
 WORKER_PID=$!
 echo "✅ Background worker started (PID: $WORKER_PID)"
 
 # Give worker time to initialize
 sleep 2
 
-# Start Next.js application
+# Start Next.js application (logs to stdout for Replit Publishing logs)
 echo "🌐 Starting Next.js application..."
-npm start > /tmp/logs/nextjs.log 2>&1 &
+npm start &
 NEXTJS_PID=$!
 echo "✅ Next.js application started (PID: $NEXTJS_PID)"
 
@@ -109,7 +107,7 @@ while true; do
     # Check if both processes are still running
     if ! kill -0 $WORKER_PID 2>/dev/null; then
         echo "❌ Background worker died, restarting..."
-        NODE_ENV=production npx tsx worker/sync-worker.ts > /tmp/logs/worker.log 2>&1 &
+        NODE_ENV=production npx tsx worker/sync-worker.ts &
         WORKER_PID=$!
         echo "🔄 Worker restarted (PID: $WORKER_PID)"
     fi
@@ -119,7 +117,7 @@ while true; do
         # Kill any lingering Node processes on port 5000
         pkill -f "next start" 2>/dev/null || true
         sleep 2
-        npm start > /tmp/logs/nextjs.log 2>&1 &
+        npm start &
         NEXTJS_PID=$!
         echo "🔄 Next.js restarted (PID: $NEXTJS_PID)"
     fi
