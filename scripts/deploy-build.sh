@@ -79,12 +79,12 @@ NODE_OPTIONS='--max-old-space-size=2048' npx prisma generate
 echo "🔨 Building production application..."
 NODE_OPTIONS='--max-old-space-size=3072' npm run build
 
-# Aggressive post-build cleanup
+# Aggressive post-build cleanup (but preserve node_modules and Prisma client)
 echo "🧹 Post-build cleanup..."
 rm -rf $npm_config_cache $TMPDIR $npm_config_prefix 2>/dev/null || true
 rm -rf /tmp/npm-* /tmp/.npm* 2>/dev/null || true
 rm -rf .next/cache 2>/dev/null || true
-find . -name "*.map" -delete 2>/dev/null || true
+# Note: NOT deleting source maps or node_modules to preserve Prisma client
 
 echo "✅ Deployment build completed successfully!"
 echo "📊 Final disk usage:"
