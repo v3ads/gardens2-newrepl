@@ -180,11 +180,31 @@ async function buildUnitsLeasingMasterInternal(
     console.log(`[OCCUPANCY_ANALYTICS] 🆕 CODE VERSION: 2025-10-06-v2 - DST-SAFE TIMEZONE FIX ACTIVE`)
     console.log(`[OCCUPANCY_ANALYTICS] Fetching normalized data for Eastern date ${today} (UTC range: ${utcDateStart.toISOString()} to ${utcDateEnd.toISOString()})...`)
     const unitDirectory = await getNormalizedUnitDirectory(utcDateStart, utcDateEnd)
-    const rentRoll = await getNormalizedRentRoll(unitDirectory, utcDateStart, utcDateEnd)
+    const rentRollRaw = await getNormalizedRentRoll(unitDirectory, utcDateStart, utcDateEnd)
     const unitVacancy = await getNormalizedUnitVacancy(unitDirectory, utcDateStart, utcDateEnd)
     const leaseHistory = await getNormalizedLeaseHistory(unitDirectory, utcDateStart, utcDateEnd)
     const tenantDirectory = await getNormalizedTenantDirectory(unitDirectory, utcDateStart, utcDateEnd)
-    console.log(`[OCCUPANCY_ANALYTICS] Data fetched: ${rentRoll.length} rent roll records, ${unitDirectory.length} units`)
+    
+    // CRITICAL FIX: Deduplicate rent roll records to prevent unique constraint violations
+    // If AppFolio sends duplicate records for the same unit/bedspace, keep only the latest one
+    const rentRollMap = new Map()
+    for (const record of rentRollRaw) {
+      const unitCodeNorm = record.unit_code_norm || ''
+      const bedspaceCode = record.bedspace_code || ''
+      const key = `${unitCodeNorm}::${bedspaceCode}`
+      
+      // Keep the latest record if there are duplicates (or first one if no timestamp)
+      if (!rentRollMap.has(key)) {
+        rentRollMap.set(key, record)
+      }
+    }
+    const rentRoll = Array.from(rentRollMap.values())
+    const duplicatesRemoved = rentRollRaw.length - rentRoll.length
+    
+    if (duplicatesRemoved > 0) {
+      console.warn(`[OCCUPANCY_ANALYTICS] ⚠️  Removed ${duplicatesRemoved} duplicate rent roll records to prevent constraint violations`)
+    }
+    console.log(`[OCCUPANCY_ANALYTICS] Data fetched: ${rentRoll.length} unique rent roll records (${rentRollRaw.length} raw), ${unitDirectory.length} units`)
     
     // Start transaction for atomic operations (using Prisma Client for consistency)
     // TIMEOUT FIX: Set 15-minute timeout for long-running analytics processing (182 units)
