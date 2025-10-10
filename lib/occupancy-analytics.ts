@@ -187,9 +187,11 @@ async function buildUnitsLeasingMasterInternal(
     console.log('[OCCUPANCY_ANALYTICS] Starting transaction for data processing (15min timeout)...')
     const result = await prisma.$transaction(async (tx) => {
       // CRITICAL FIX: DELETE old data for snapshot date FIRST to ensure fresh data
-      console.log(`[OCCUPANCY_ANALYTICS] Deleting old analytics_master data for ${today}...`)
+      // Use explicit UTC midnight to ensure consistent date comparison
+      const snapshotDateForDb = new Date(`${today}T00:00:00.000Z`)
+      console.log(`[OCCUPANCY_ANALYTICS] Deleting old analytics_master data for ${today} (${snapshotDateForDb.toISOString()})...`)
       const deleteResult = await tx.analyticsMaster.deleteMany({
-        where: { snapshotDate: new Date(today) }
+        where: { snapshotDate: snapshotDateForDb }
       })
       console.log(`[OCCUPANCY_ANALYTICS] Deleted ${deleteResult.count} old records for ${today}`)
 
@@ -431,9 +433,11 @@ async function buildUnitsLeasingMasterInternal(
       }
 
       // CRITICAL FIX: Write directly to analytics_master (no temp table)
+      // Use explicit UTC midnight to ensure consistent date storage
+      const snapshotDateForRecord = new Date(`${asOfDate}T00:00:00.000Z`)
       await tx.analyticsMaster.create({
         data: {
-          snapshotDate: new Date(asOfDate),
+          snapshotDate: snapshotDateForRecord,
           propertyId: propertyId,
           unitCode: unitCode,
           bedspaceCode: bedspaceCode,
