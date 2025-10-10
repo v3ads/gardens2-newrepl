@@ -3,7 +3,7 @@ import type { Express } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
 import multer from 'multer';
-import tar from 'tar';
+import * as tar from 'tar';
 import fs from 'fs';
 import path from 'path';
 
