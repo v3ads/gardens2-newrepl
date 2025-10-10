@@ -8,12 +8,10 @@ const globalForPrisma = globalThis as unknown as {
 function createPrismaClient() {
   const databaseUrl = process.env.DATABASE_URL
   
-  // CRITICAL: Validate DATABASE_URL before use
+  // CRITICAL: Validate DATABASE_URL at runtime only (not during import/build)
+  // This allows the module to be imported during build without DATABASE_URL
   if (!databaseUrl) {
-    console.error('[PRISMA] FATAL ERROR: DATABASE_URL environment variable is not set!')
-    console.error('[PRISMA] This usually means Publishing secrets are not available to this process')
-    console.error('[PRISMA] Check that DATABASE_URL is configured in Publishing → Secrets')
-    throw new Error('DATABASE_URL is required but not set')
+    throw new Error('DATABASE_URL is required but not set. Check Publishing secrets.')
   }
   
   // Add connection pooling parameters optimized for Reserved VM deployment
@@ -43,11 +41,21 @@ function createPrismaClient() {
   })
 }
 
-export const prisma = globalForPrisma.prisma ?? createPrismaClient()
+// CRITICAL: Use lazy initialization - don't create client until first access
+// This prevents DATABASE_URL validation from running during Next.js build
+let _prisma: PrismaClient | undefined
 
-if (process.env.NODE_ENV !== 'production') {
-  globalForPrisma.prisma = prisma
-}
+export const prisma = new Proxy({} as PrismaClient, {
+  get(target, prop) {
+    if (!_prisma) {
+      _prisma = globalForPrisma.prisma ?? createPrismaClient()
+      if (process.env.NODE_ENV !== 'production') {
+        globalForPrisma.prisma = _prisma
+      }
+    }
+    return _prisma[prop as keyof PrismaClient]
+  }
+})
 
 // Enhanced retry wrapper for Replit PostgreSQL lifecycle issues
 export async function withPrismaRetry<T>(
