@@ -1,4 +1,51 @@
-modules = ["nodejs-20"]
+modules = ["nodejs-20", "postgresql-16", "python-3.11"]
+[agent]
+expertMode = true
+integrations = ["javascript_openai:1.0.0", "javascript_database:1.0.0", "google-sheet:1.0.0"]
 
 [nix]
 channel = "stable-25_05"
+packages = ["imagemagick", "jq", "sqlite", "unzip", "zip"]
+
+[workflows]
+runButton = "Project"
+
+[[workflows.workflow]]
+name = "Full Production Server"
+author = 38056203
+mode = "sequential"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "npm run start:production"
+
+[[workflows.workflow]]
+name = "Project"
+mode = "parallel"
+author = "agent"
+
+[[workflows.workflow.tasks]]
+task = "workflow.run"
+args = "Development Server"
+
+[[workflows.workflow]]
+name = "Development Server"
+author = "agent"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "bash scripts/start-dev.sh"
+waitForPort = 5000
+
+[workflows.workflow.metadata]
+outputType = "webview"
+
+[[ports]]
+localPort = 5000
+externalPort = 80
+
+
+[deployment]
+deploymentTarget = "vm"
+build = ["bash", "-c", "echo 'Skipping auto npm install' && bash scripts/deploy-build.sh"]
+run = ["bash", "scripts/start-production.sh"]
