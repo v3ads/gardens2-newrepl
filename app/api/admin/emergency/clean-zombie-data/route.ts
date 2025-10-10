@@ -8,15 +8,25 @@ export const runtime = 'nodejs'
 
 export async function POST(request: NextRequest) {
   try {
-    // Require authentication
-    const session = await getServerSession(authOptions)
-    if (!session?.user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    }
+    // Allow either session auth OR secret key for emergency access
+    const authHeader = request.headers.get('authorization')
+    const secretKey = authHeader?.replace('Bearer ', '')
+    const validSecret = process.env.CRON_SECRET || process.env.WEBHOOK_SECRET_KEY
+    
+    // Check secret key first (for emergency API access)
+    const hasValidSecret = secretKey && validSecret && secretKey === validSecret
+    
+    // If no valid secret, require session authentication
+    if (!hasValidSecret) {
+      const session = await getServerSession(authOptions)
+      if (!session?.user) {
+        return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+      }
 
-    // Require ADMIN role
-    if (session.user.role !== 'ADMIN') {
-      return NextResponse.json({ error: 'Forbidden - Admin access required' }, { status: 403 })
+      // Require ADMIN role
+      if (session.user.role !== 'ADMIN') {
+        return NextResponse.json({ error: 'Forbidden - Admin access required' }, { status: 403 })
+      }
     }
 
     const body = await request.json()
