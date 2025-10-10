@@ -464,8 +464,8 @@ async function buildUnitsLeasingMasterInternal(
         }
       }
 
-      if (!isOccupied && rentData?.market_rent) {
-        const marketRent = parseFloat(rentData.market_rent.toString().replace(/[,$]/g, '') || '0')
+      if (!isOccupied && (rentData?.MarketRent || rentData?.market_rent || rentData?.ComputedMarketRent || rentData?.AdvertisedRent || rentData?.LegalRent)) {
+        const marketRent = parseFloat((rentData.MarketRent || rentData.market_rent || rentData.ComputedMarketRent || rentData.AdvertisedRent || rentData.LegalRent).toString().replace(/[,$]/g, '') || '0')
         if (marketRent > 0) {
           vacancyLoss = marketRent * (daysVacant / 30)
         }
@@ -485,8 +485,8 @@ async function buildUnitsLeasingMasterInternal(
           isOccupied: isOccupied,
           studentFlag: studentFlag,
           primaryTenantFlag: primaryTenantFlag,
-          marketRent: parseFloat(rentData?.market_rent?.toString().replace(/[,$]/g, '') || '0') || null,
-          mrr: parseFloat(rentData?.monthly_recurring_rent?.toString().replace(/[,$]/g, '') || rentData?.market_rent?.toString().replace(/[,$]/g, '') || '0') || null,
+          marketRent: parseFloat((rentData?.MarketRent || rentData?.market_rent || rentData?.ComputedMarketRent || rentData?.AdvertisedRent || rentData?.LegalRent)?.toString().replace(/[,$]/g, '') || '0') || null,
+          mrr: parseFloat((rentData?.Rent || rentData?.monthly_recurring_rent || rentData?.MarketRent || rentData?.market_rent || rentData?.ComputedMarketRent)?.toString().replace(/[,$]/g, '') || '0') || null,
           moveIn: rentData?.move_in_date || leaseData?.move_in_date || null,
           moveOut: rentData?.move_out_date || leaseData?.move_out_date || null,
           leaseStart: rentData?.lease_start_date || leaseData?.lease_start_date || null,
