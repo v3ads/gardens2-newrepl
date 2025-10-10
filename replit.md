@@ -4,10 +4,11 @@ Cynthia Gardens Command Center is a modern property management application built
 
 ## Current Version
 
-**v18.0.0** (Released: 2025-10-10)
+**v18.1.0** (Released: 2025-10-10)
 
 ### Recent Changes
-- **v18.0.0** (2025-10-10): Fixed RentIQ unit ordering and count logic. (1) Implemented proper sort order: units now ordered by HIGHEST vacancy days first (descending) for progressive discount prioritization. (2) Corrected total unit count: RentIQ now operates on all 182 units (family units 115, 116, 202, 313, 318 are always occupied and count toward total). Current metrics: 139 occupied (includes 5 family units), 43 vacant, 76.37% occupancy, 34-unit RentIQ pool.
+- **v18.1.0** (2025-10-10): Fixed RentIQ occupancy calculation to match UnifiedAnalytics. Root cause: Unit 816 has status "Notice" (not "Current" or "Vacant"). RentIQ was only counting "Current" as occupied, while UnifiedAnalytics correctly counts anything NOT "Vacant" as occupied (including 'Notice', 'Future', etc.). Both systems now show: 140 occupied, 42 vacant, 76.92% occupancy, 33-unit RentIQ pool.
+- **v18.0.0** (2025-10-10): Fixed RentIQ unit ordering and count logic. (1) Implemented proper sort order: units now ordered by HIGHEST vacancy days first (descending) for progressive discount prioritization. (2) Corrected total unit count: RentIQ now operates on all 182 units (family units 115, 116, 202, 313, 318 are always occupied and count toward total).
 - **v17.0.0** (2025-10-10): Fixed critical RentIQ bugs causing incorrect pool calculations. Root causes: (1) Timezone mismatch - Prisma exact date match failed with Eastern-stored dates; implemented date range query. (2) Wrong data source - both daily-sync and API were using broken `rentiq-analytics-advanced.ts` that queried analytics_master with NULL market rents; switched to working `rentiq-analytics.ts` that uses master_csv_data. Results: Pool count fixed from 0 to 34 units, occupied units corrected from 166 to 139. Deprecated old file with warning.
 - **v16.0.0** (2025-10-10): Fixed critical sync failures by implementing AppFolio duplicate record deduplication. Resolved constraint violations from duplicate `(unit_code, bedspace_code)` combinations. Sync now processes 5,372 records with zero errors.
 - **v15.0.0** (Previous): Production deployment baseline

@@ -100,7 +100,9 @@ export class RentIQAnalytics {
       
       const masterData = masterDataRaw.map(mtd => ({
         'Unit': mtd.unitCode,
-        'Tenant Status': mtd.isOccupied ? 'Current' : 'Vacant',
+        // CRITICAL: Use actual tenant status from CSV to match UnifiedAnalytics logic
+        // Statuses: 'Current', 'Vacant', 'Notice', 'Notice Unrented', 'Future', etc.
+        'Tenant Status': csvDataMap.get(mtd.unitCode)?.tenantStatus || (mtd.isOccupied ? 'Current' : 'Vacant'),
         'Monthly Rent': mtd.mrrAmount,
         'Market Rent': csvDataMap.get(mtd.unitCode)?.marketRent || mtd.marketRent, // Use CSV market rent (correct) over masterTenantData (NULL)
         'Unit Type': csvDataMap.get(mtd.unitCode)?.unitType || null,
@@ -117,30 +119,30 @@ export class RentIQAnalytics {
       // Get total unique units from master.csv (all units including family units)
       const totalUnitsQuery = await prisma.masterCsvData.count()
 
-      // Get occupied units from master tenant data (all units)
-      const currentUnits = masterData.filter(row => row['Tenant Status'] === 'Current')
+      // CRITICAL: Match UnifiedAnalytics logic - anything NOT 'Vacant' is considered occupied
+      // This includes 'Current', 'Notice', 'Notice Unrented', 'Future', etc.
+      const occupiedUnits = masterData.filter(row => row['Tenant Status'] !== 'Vacant')
       
       // Calculate basic occupancy metrics using all 182 units (family units are always occupied)
       const totalUnits = totalUnitsQuery || 182 // Use master.csv count or fallback to 182
-      const occupiedUnits = currentUnits.length
-      const currentOccupancy = (occupiedUnits / totalUnits) * 100
+      const currentOccupancy = (occupiedUnits.length / totalUnits) * 100
       
       // Target is 95% occupancy
       const targetOccupancy = 95
       const targetOccupiedUnits = Math.ceil((targetOccupancy / 100) * totalUnits) // 173 units
       const allowedVacantUnits = totalUnits - targetOccupiedUnits // 9 units
       
-      // Find vacant units (any unit where Tenant Status != "Current")
-      const vacantUnits = masterData.filter(row => row['Tenant Status'] !== 'Current')
+      // Find vacant units (only units with status 'Vacant')
+      const vacantUnits = masterData.filter(row => row['Tenant Status'] === 'Vacant')
       
       // Calculate RentIQ Pool: vacant units minus allowed vacant units (9)
       const rentiqPoolCount = Math.max(0, vacantUnits.length - allowedVacantUnits)
-      const unitsNeededFor95 = Math.max(0, targetOccupiedUnits - occupiedUnits)
+      const unitsNeededFor95 = Math.max(0, targetOccupiedUnits - occupiedUnits.length)
       
       // RentIQ is active if pool count > 0
       const rentiqActive = rentiqPoolCount > 0
       
-      console.log(`[RENTIQ] Occupancy: ${occupiedUnits}/${totalUnits} (${currentOccupancy.toFixed(1)}%), Vacant: ${vacantUnits.length}, Pool: ${rentiqPoolCount}`)
+      console.log(`[RENTIQ] Occupancy: ${occupiedUnits.length}/${totalUnits} (${currentOccupancy.toFixed(1)}%), Vacant: ${vacantUnits.length}, Pool: ${rentiqPoolCount}`)
 
       // Calculate pricing for RentIQ pool units
       const rentiqUnits: RentIQUnit[] = []
@@ -192,7 +194,7 @@ export class RentIQAnalytics {
         date: targetDate!,
         current_occupancy: Math.round(currentOccupancy * 100) / 100,
         total_units: totalUnits,
-        occupied_units: occupiedUnits,
+        occupied_units: occupiedUnits.length,
         target_occupancy: targetOccupancy,
         target_occupied_units: targetOccupiedUnits,
         rentiq_pool_count: rentiqPoolCount,
