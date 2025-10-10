@@ -1,0 +1,276 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Cynthia Gardens Command Center - Design Export</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="styles.css">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/lucide/0.263.1/lucide.min.css" rel="stylesheet">
+    <script>
+        tailwind.config = {
+            darkMode: ["class"],
+            theme: {
+                extend: {
+                    colors: {
+                        border: "hsl(var(--border))",
+                        input: "hsl(var(--input))",
+                        ring: "hsl(var(--ring))",
+                        background: "hsl(var(--background))",
+                        foreground: "hsl(var(--foreground))",
+                        primary: {
+                            DEFAULT: "hsl(var(--primary))",
+                            foreground: "hsl(var(--primary-foreground))",
+                        },
+                        secondary: {
+                            DEFAULT: "hsl(var(--secondary))",
+                            foreground: "hsl(var(--secondary-foreground))",
+                        },
+                        destructive: {
+                            DEFAULT: "hsl(var(--destructive))",
+                            foreground: "hsl(var(--destructive-foreground))",
+                        },
+                        muted: {
+                            DEFAULT: "hsl(var(--muted))",
+                            foreground: "hsl(var(--muted-foreground))",
+                        },
+                        accent: {
+                            DEFAULT: "hsl(var(--accent))",
+                            foreground: "hsl(var(--accent-foreground))",
+                        },
+                        popover: {
+                            DEFAULT: "hsl(var(--popover))",
+                            foreground: "hsl(var(--popover-foreground))",
+                        },
+                        card: {
+                            DEFAULT: "hsl(var(--card))",
+                            foreground: "hsl(var(--card-foreground))",
+                        },
+                    },
+                }
+            }
+        }
+    </script>
+</head>
+<body class="bg-background text-foreground">
+    <!-- Header -->
+    <header class="sticky top-0 z-50 w-full futuristic-header">
+        <div class="container flex h-16 items-center px-4">
+            <!-- Mobile menu button -->
+            <button class="mr-2 px-0 text-base hover:bg-transparent focus-visible:bg-transparent focus-visible:ring-0 focus-visible:ring-offset-0 md:hidden">
+                <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"/>
+                </svg>
+            </button>
+            
+            <div class="mr-4 flex">
+                <a href="/" class="mr-2 flex items-center space-x-3 md:mr-6">
+                    <div class="flex items-center space-x-2">
+                        <div class="w-8 h-8 rounded-full animated-gradient flex items-center justify-center pulse-glow">
+                            <span class="text-white dark:text-green-900 font-bold text-sm">CG</span>
+                        </div>
+                        <div class="flex flex-col">
+                            <span class="neon-text font-bold text-sm md:text-base hidden sm:inline-block leading-tight">
+                                Cynthia Gardens
+                            </span>
+                            <span class="text-xs text-primary/80 hidden sm:inline-block">
+                                Command Center
+                            </span>
+                        </div>
+                    </div>
+                    <span class="inline-block rounded-full bg-gradient-to-r from-green-400 to-emerald-400 px-3 py-1 text-xs font-medium text-green-900 shadow-lg shadow-green-400/30 animate-pulse">
+                        DEV MODE
+                    </span>
+                </a>
+            </div>
+
+            <div class="flex flex-1 items-center justify-between space-x-2 md:justify-end">
+                <div class="w-full flex-1 md:w-auto md:flex-none hidden sm:block">
+                    <div class="relative">
+                        <svg class="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-primary/60" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/>
+                        </svg>
+                        <input
+                            placeholder="Search the matrix..."
+                            class="pl-10 md:w-[250px] lg:w-[300px] futuristic-input border-primary/40 focus:border-primary rounded-md h-10 px-3 py-2 text-sm"
+                        />
+                    </div>
+                </div>
+
+                <button class="cyber-border hover:bg-primary/10 transition-all duration-300 hover:scale-110 h-10 w-10 rounded-md flex items-center justify-center">
+                    <svg class="h-[1.2rem] w-[1.2rem] text-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z"/>
+                    </svg>
+                </button>
+
+                <div class="flex items-center gap-2">
+                    <button class="relative h-10 w-10 rounded-full p-0 hover:scale-110 transition-all duration-300">
+                        <div class="h-10 w-10 rounded-full animated-gradient pulse-glow border-2 border-primary/50 shadow-lg flex items-center justify-center hover:shadow-2xl transition-all duration-300">
+                            <svg class="h-5 w-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"/>
+                            </svg>
+                        </div>
+                    </button>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <div class="flex">
+        <!-- Sidebar -->
+        <div class="pb-12 w-64 max-w-full futuristic-sidebar hidden md:block">
+            <div class="space-y-4 py-4">
+                <div class="px-3 py-2">
+                    <div class="relative">
+                        <svg class="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-primary/60" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/>
+                        </svg>
+                        <input
+                            placeholder="Search features..."
+                            class="pl-10 w-full futuristic-input border-primary/40 focus:border-primary rounded-md h-10 px-3 py-2 text-sm"
+                        />
+                    </div>
+                </div>
+                <div class="px-3">
+                    <h2 class="mb-4 px-4 text-lg font-semibold tracking-tight neon-text">
+                        Features
+                    </h2>
+                    <div class="space-y-2">
+                        <a href="#" class="w-full justify-start text-left transition-all duration-300 hover:bg-primary/20 hover:border-primary/50 hover:text-primary border border-transparent hover:shadow-lg futuristic-button-primary text-primary-foreground flex items-center p-3 rounded-lg">
+                            <span class="flex-shrink-0 text-primary">📊</span>
+                            <span class="ml-3 truncate">Analytics</span>
+                            <div class="ml-auto w-2 h-2 rounded-full bg-primary animate-pulse"></div>
+                        </a>
+                        <a href="#" class="w-full justify-start text-left transition-all duration-300 hover:bg-primary/20 hover:border-primary/50 hover:text-primary border border-transparent hover:shadow-lg flex items-center p-3 rounded-lg">
+                            <span class="flex-shrink-0 text-primary">💰</span>
+                            <span class="ml-3 truncate">Financial</span>
+                        </a>
+                        <a href="#" class="w-full justify-start text-left transition-all duration-300 hover:bg-primary/20 hover:border-primary/50 hover:text-primary border border-transparent hover:shadow-lg flex items-center p-3 rounded-lg">
+                            <span class="flex-shrink-0 text-primary">🏠</span>
+                            <span class="ml-3 truncate">RentIQ</span>
+                        </a>
+                        <a href="#" class="w-full justify-start text-left transition-all duration-300 hover:bg-primary/20 hover:border-primary/50 hover:text-primary border border-transparent hover:shadow-lg flex items-center p-3 rounded-lg">
+                            <span class="flex-shrink-0 text-primary">🔍</span>
+                            <span class="ml-3 truncate">Query</span>
+                        </a>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Main Content -->
+        <main class="flex-1 p-6">
+            <div class="space-y-6 md:space-y-8">
+                <div class="text-center space-y-3">
+                    <h1 class="text-3xl md:text-4xl font-bold tracking-tight neon-text">
+                        Command Center Overview
+                    </h1>
+                    <p class="text-base md:text-lg text-primary/80">
+                        Welcome to your futuristic command center dashboard
+                    </p>
+                </div>
+
+                <div class="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
+                    <div class="futuristic-card hover:scale-105 transition-all duration-300 rounded-lg border bg-card text-card-foreground shadow-sm p-6">
+                        <div class="pb-2">
+                            <h3 class="text-primary flex items-center gap-2 tracking-tight text-lg font-semibold">
+                                <div class="w-2 h-2 bg-primary rounded-full animate-pulse"></div>
+                                Operator Identity
+                            </h3>
+                            <p class="text-primary/70 text-sm text-muted-foreground">Your current session</p>
+                        </div>
+                        <div>
+                            <div class="text-2xl font-bold text-primary">John Doe</div>
+                            <p class="text-xs text-primary/60 mt-1">
+                                john.doe@example.com
+                            </p>
+                        </div>
+                    </div>
+
+                    <div class="futuristic-card hover:scale-105 transition-all duration-300 rounded-lg border bg-card text-card-foreground shadow-sm p-6">
+                        <div class="pb-2">
+                            <h3 class="text-primary flex items-center gap-2 tracking-tight text-lg font-semibold">
+                                <div class="w-2 h-2 bg-accent rounded-full animate-pulse"></div>
+                                Access Clearance
+                            </h3>
+                            <p class="text-primary/70 text-sm text-muted-foreground">Security level permissions</p>
+                        </div>
+                        <div>
+                            <div class="text-2xl font-bold text-accent">ADMIN</div>
+                            <p class="text-xs text-primary/60 mt-1">
+                                Current authorization level
+                            </p>
+                        </div>
+                    </div>
+
+                    <div class="futuristic-card hover:scale-105 transition-all duration-300 cyber-border rounded-lg border bg-card text-card-foreground shadow-sm p-6">
+                        <div class="pb-2">
+                            <h3 class="text-primary flex items-center gap-2 tracking-tight text-lg font-semibold">
+                                <div class="w-2 h-2 bg-green-400 rounded-full animate-pulse"></div>
+                                System Activity
+                            </h3>
+                            <p class="text-primary/70 text-sm text-muted-foreground">Neural network status</p>
+                        </div>
+                        <div>
+                            <div class="text-2xl font-bold text-green-400">ONLINE</div>
+                            <p class="text-xs text-primary/60 mt-1">
+                                All systems operational
+                            </p>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Analytics KPI Cards Sample -->
+                <div class="grid gap-6 sm:grid-cols-2 lg:grid-cols-4">
+                    <div class="futuristic-card rounded-lg border bg-card text-card-foreground shadow-sm p-6">
+                        <div class="pb-2">
+                            <h3 class="tracking-tight text-sm font-medium">Total Units</h3>
+                        </div>
+                        <div class="text-2xl font-bold">200</div>
+                        <p class="text-xs text-muted-foreground">Property units managed</p>
+                    </div>
+                    
+                    <div class="futuristic-card rounded-lg border bg-card text-card-foreground shadow-sm p-6">
+                        <div class="pb-2">
+                            <h3 class="tracking-tight text-sm font-medium">Occupied</h3>
+                        </div>
+                        <div class="text-2xl font-bold text-green-400">142</div>
+                        <p class="text-xs text-muted-foreground">71% occupancy rate</p>
+                    </div>
+                    
+                    <div class="futuristic-card rounded-lg border bg-card text-card-foreground shadow-sm p-6">
+                        <div class="pb-2">
+                            <h3 class="tracking-tight text-sm font-medium">Student Units</h3>
+                        </div>
+                        <div class="text-2xl font-bold text-blue-400">34</div>
+                        <p class="text-xs text-muted-foreground">Student housing</p>
+                    </div>
+                    
+                    <div class="futuristic-card rounded-lg border bg-card text-card-foreground shadow-sm p-6">
+                        <div class="pb-2">
+                            <h3 class="tracking-tight text-sm font-medium">Avg Vacancy</h3>
+                        </div>
+                        <div class="text-2xl font-bold text-orange-400">112.4</div>
+                        <p class="text-xs text-muted-foreground">Days average</p>
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <script>
+        // Theme toggle functionality
+        function toggleTheme() {
+            document.documentElement.classList.toggle('dark');
+        }
+        
+        // Add click handlers
+        document.addEventListener('DOMContentLoaded', function() {
+            const themeToggle = document.querySelector('button[class*="cyber-border"]');
+            if (themeToggle) {
+                themeToggle.addEventListener('click', toggleTheme);
+            }
+        });
+    </script>
+</body>
+</html>

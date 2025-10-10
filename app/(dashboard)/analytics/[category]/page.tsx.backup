@@ -1,0 +1,839 @@
+'use client'
+
+import { useRouter, useParams } from 'next/navigation'
+import { Button } from '@/components/ui/button'
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { ArrowLeft, Building2, DollarSign, Wrench, LineChart, RefreshCw, Loader2, Settings } from 'lucide-react'
+import { useAnalytics } from '@/contexts/analytics-context'
+import { useEffect, useState } from 'react'
+import { Input } from '@/components/ui/input'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { AnalyticsLoadingState } from '@/components/analytics-skeletons'
+import { AnalyticsEmptyState } from '@/components/analytics-empty-state'
+import { OccupancyKPICards } from '@/components/occupancy-kpi-cards'
+import { OperationalKPICards } from '@/components/operational-kpi-cards'
+import { OccupancyKPIs } from '@/lib/occupancy-analytics'
+import { OperationalKPIs } from '@/components/operational-kpi-cards'
+import { toast } from 'sonner'
+
+const categoryData = {
+  occupancy: {
+    title: 'Occupancy & Leasing',
+    description: 'Monitor occupancy rates, vacancy periods, and leasing activity across your properties.',
+    icon: Building2,
+  },
+  financial: {
+    title: 'Financial',
+    description: 'Track monthly recurring revenue, growth metrics, and financial performance indicators.',
+    icon: DollarSign,
+  },
+  operations: {
+    title: 'Operational Efficiency',
+    description: 'Optimize turnover processes, maintenance cycles, and operational workflows.',
+    icon: Wrench,
+  },
+  forecasts: {
+    title: 'Forecasts & Insights',
+    description: 'Predictive analytics for occupancy, revenue, and market trend analysis.',
+    icon: LineChart,
+  },
+}
+
+export default function AnalyticsCategoryPage() {
+  const router = useRouter()
+  const params = useParams()
+  const { setSelectedCategory } = useAnalytics()
+  const [isLoading, setIsLoading] = useState(true)
+  const [hasData, setHasData] = useState(false)
+  const [appfolioConnected, setAppfolioConnected] = useState(false)
+  const [occupancyKPIs, setOccupancyKPIs] = useState<OccupancyKPIs | null>(null)
+  const [operationalKPIs, setOperationalKPIs] = useState<OperationalKPIs | null>(null)
+
+  const [showDevControls, setShowDevControls] = useState(false)
+  const [newOverride, setNewOverride] = useState({ unitCode: '', isStudent: true })
+  const [showNoCoverageWarning, setShowNoCoverageWarning] = useState(false)
+  const [auditData, setAuditData] = useState<any>(null)
+  const [showDataQualityWarning, setShowDataQualityWarning] = useState(false)
+  const [isRebuilding, setIsRebuilding] = useState(false)
+  const [crosswalkStats, setCrosswalkStats] = useState<any>(null)
+  const [sourceDistribution, setSourceDistribution] = useState<any>({})
+  const [sourceStatus, setSourceStatus] = useState<{[key: string]: boolean}>({
+    rent_roll: false,
+    unit_vacancy: false, 
+    lease_history: false,
+    lease_expiration_detail: false,
+    unit_directory: false
+  })
+  const [isRemapping, setIsRemapping] = useState(false)
+
+  const categoryKey = params.category as string
+  const category = categoryData[categoryKey as keyof typeof categoryData]
+  const isDev = process.env.NODE_ENV === 'development'
+
+  // Handle student override
+  const handleAddOverride = async () => {
+    if (!newOverride.unitCode.trim()) return
+
+    try {
+      const response = await fetch('/api/analytics/occupancy/override', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          unit_code: newOverride.unitCode.trim(),
+          is_student: newOverride.isStudent
+        })
+      })
+
+      if (response.ok) {
+        toast.success(`Override added: ${newOverride.unitCode} -> ${newOverride.isStudent ? 'student' : 'non-student'}`)
+        setNewOverride({ unitCode: '', isStudent: true })
+        // Reload KPIs
+        setTimeout(() => {
+          loadOccupancyKPIs()
+          loadSourceStatus()
+        }, 1000)
+      } else {
+        const data = await response.json()
+        toast.error(data.error || 'Failed to add override')
+      }
+    } catch (error) {
+      toast.error('Error adding override')
+      console.error('Override error:', error)
+    }
+  }
+
+  const handleRemap = async () => {
+    setIsRemapping(true)
+    try {
+      const response = await fetch('/api/analytics/occupancy/remap', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' }
+      })
+
+      const data = await response.json()
+
+      if (data.success) {
+        toast.success(`Successfully remapped columns and rebuilt analytics master`)
+        // Reload KPIs and source status
+        setTimeout(() => {
+          loadOccupancyKPIs()
+          loadSourceStatus()
+        }, 1000)
+      } else {
+        toast.error(data.message || 'Failed to remap and rebuild')
+      }
+    } catch (error) {
+      toast.error('Error during remap and rebuild')
+      console.error('Remap error:', error)
+    } finally {
+      setIsRemapping(false)
+    }
+  }
+
+  useEffect(() => {
+    if (categoryKey && category) {
+      setSelectedCategory(categoryKey)
+    }
+  }, [categoryKey, category, setSelectedCategory])
+
+  // Load existing data on component mount with auto-refresh
+  useEffect(() => {
+    const initializeData = async () => {
+      try {
+        // Add timestamp for aggressive cache busting
+        const timestamp = Date.now()
+
+        // Check AppFolio connection status
+        const appfolioResponse = await fetch(`/api/appfolio/status?t=${timestamp}`, {
+          cache: 'no-store',
+          headers: { 
+            'Cache-Control': 'no-cache, no-store, must-revalidate',
+            'Pragma': 'no-cache',
+            'Expires': '0'
+          }
+        })
+        const appfolioData = await appfolioResponse.json()
+        setAppfolioConnected(appfolioData.isConnected || false)
+
+        // Check if we have existing data
+        const analyticsResponse = await fetch(`/api/analytics/status?t=${timestamp}`, {
+          cache: 'no-store',
+          headers: { 
+            'Cache-Control': 'no-cache, no-store, must-revalidate',
+            'Pragma': 'no-cache',
+            'Expires': '0'
+          }
+        })
+        const analyticsData = await analyticsResponse.json()
+        setHasData(analyticsData.hasData || false)
+
+        // Load existing data if available
+        if (analyticsData.hasData) {
+          if (categoryKey === 'occupancy') {
+            await Promise.all([
+              loadOccupancyKPIs(),
+              loadSourceStatus(),
+              loadAuditData()
+            ])
+          } else if (categoryKey === 'operations') {
+            await loadOperationalKPIs()
+          }
+        }
+      } catch (error) {
+        console.error('[OCCUPANCY] Error loading data:', error)
+        setHasData(false)
+      } finally {
+        setIsLoading(false)
+      }
+    }
+
+    initializeData()
+
+    // Auto-refresh every 5 minutes for fresh data
+    const interval = setInterval(() => {
+      if (categoryKey === 'occupancy') {
+        loadOccupancyKPIs()
+        loadSourceStatus()
+        loadAuditData()
+      } else if (categoryKey === 'operations') {
+        loadOperationalKPIs()
+      }
+    }, 5 * 60 * 1000)
+
+    return () => clearInterval(interval)
+  }, [categoryKey])
+
+  // Handle auto-refresh when visiting analytics pages (development only)
+  useEffect(() => {
+    const triggerAutoSync = async () => {
+      if (!appfolioConnected) return
+
+      // Skip auto-sync in deployment environment
+      const isDeployment = process.env.NODE_ENV === 'production'
+      if (isDeployment) {
+        console.log('[ANALYTICS] Auto-sync skipped in deployment environment')
+        return
+      }
+
+      try {
+        const response = await fetch('/api/analytics/auto-sync', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' }
+        })
+
+        if (response.ok) {
+          console.log('[ANALYTICS] Auto-sync triggered successfully')
+          // Reload data after sync
+          setTimeout(() => {
+            if (categoryKey === 'occupancy') {
+              loadOccupancyKPIs()
+              loadSourceStatus()
+              loadAuditData()
+            } else if (categoryKey === 'operations') {
+              loadOperationalKPIs()
+            }
+          }, 2000)
+        } else {
+          console.log('[ANALYTICS] Auto-sync not needed or failed')
+        }
+      } catch (error) {
+        console.error('[ANALYTICS] Auto-sync error:', error)
+      }
+    }
+
+    // Only trigger auto-sync for data-dependent categories when AppFolio is connected (development only)
+    if ((categoryKey === 'occupancy' || categoryKey === 'operations') && appfolioConnected) {
+      triggerAutoSync()
+    }
+  }, [categoryKey, appfolioConnected])
+
+  // Load audit data to check data quality
+  const loadAuditData = async () => {
+    try {
+      const response = await fetch('/api/analytics/occupancy/audit')
+      const data = await response.json()
+
+      if (data.success) {
+        setAuditData(data.data)
+
+        // Check for data quality issues
+        const nulls = data.data.nulls || {}
+        const hasIssues = 
+          (nulls.master_unit_code_null > 0) ||
+          (nulls.master_bad_occupied?.some((item: any) => item.t !== 'integer')) ||
+          (nulls.master_bad_student?.some((item: any) => item.t !== 'integer'))
+
+        setShowDataQualityWarning(hasIssues)
+      }
+    } catch (error) {
+      console.error('Error loading audit data:', error)
+    }
+  }
+
+  // Load source status
+  const loadSourceStatus = async () => {
+    try {
+      const response = await fetch('/api/analytics/occupancy/diag')
+      const data = await response.json()
+
+      if (data.success && data.data.counts) {
+        const counts = data.data.counts
+        setSourceStatus({
+          rent_roll: counts.raw_report_rent_roll > 0,
+          unit_vacancy: counts.raw_report_unit_vacancy > 0,
+          lease_history: counts.raw_report_lease_history > 0,
+          lease_expiration_detail: counts.raw_report_lease_expiration_detail > 0,
+          unit_directory: counts.raw_report_unit_directory > 0
+        })
+      }
+    } catch (error) {
+      console.error('Error loading source status:', error)
+    }
+  }
+
+  // Handle rebuild operation
+  const handleRebuild = async () => {
+    setIsRebuilding(true)
+    try {
+      const response = await fetch('/api/analytics/occupancy/rebuild', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' }
+      })
+
+      const data = await response.json()
+
+      if (data.success) {
+        toast.success(`Successfully rebuilt analytics: ${data.data.master_rows} rows`)
+
+        // Update crosswalk and source stats from rebuild response
+        if (data.data.crosswalk_stats) {
+          setCrosswalkStats(data.data.crosswalk_stats)
+        }
+        if (data.data.sources) {
+          setSourceDistribution(data.data.sources)
+        }
+
+        // Reload all data
+        setTimeout(() => {
+          loadOccupancyKPIs()
+          loadSourceStatus()
+          loadAuditData()
+        }, 1000)
+      } else {
+        toast.error(data.message || 'Failed to rebuild')
+      }
+    } catch (error) {
+      toast.error('Error during rebuild')
+      console.error('Rebuild error:', error)
+    } finally {
+      setIsRebuilding(false)
+    }
+  }
+
+  // Load operational KPIs
+  const loadOperationalKPIs = async () => {
+    try {
+      const timestamp = Date.now()
+      const response = await fetch(`/api/analytics/operational?t=${timestamp}`, {
+        cache: 'no-store',
+        headers: { 
+          'Cache-Control': 'no-cache, no-store, must-revalidate',
+          'Pragma': 'no-cache',
+          'Expires': '0'
+        }
+      })
+
+      if (response.ok) {
+        const data = await response.json()
+        if (data.success) {
+          // Map the API response to match our component interface
+          const mappedData: OperationalKPIs = {
+            turnoverRate12Mo: data.data.turnoverRate12Mo || 0,
+            avgMakeReadyDays: data.data.avgMakeReadyDays || 0,
+            avgLeaseUpDays: data.data.avgLeaseUpDays || 0,
+            workOrderBacklog: data.data.workOrderBacklog || 0,
+            avgWorkOrderAge: data.data.avgWorkOrderAge || 0,
+            slaComplianceRate: data.data.slaCompliance || 0,
+            firstPassFixRate: data.data.firstPassFixRate || 0,
+            preventiveMaintenanceRate: data.data.preventiveMaintenanceCompliance || 0,
+            avgTurnCost: data.data.avgTurnCostPerUnit || 0,
+            maintenanceLinkedVacancies: data.data.maintenanceLinkedVacancyDays || 0,
+            workOrdersPerUnit30d: data.data.workOrdersPerOccupiedUnit30d || 0,
+            snapshotDate: data.data.snapshotDate || new Date().toISOString().split('T')[0]
+          }
+          setOperationalKPIs(mappedData)
+          setHasData(true)
+        } else {
+          setOperationalKPIs(null)
+          setHasData(false)
+        }
+      } else {
+        console.error('Failed to load operational KPIs:', response.statusText)
+        setOperationalKPIs(null)
+        setHasData(false)
+      }
+    } catch (error) {
+      console.error('Error loading operational KPIs:', error)
+      setOperationalKPIs(null)
+      setHasData(false)
+    }
+  }
+
+  // Load occupancy KPIs - hybrid approach for best data
+  const loadOccupancyKPIs = async () => {
+    try {
+      // Add timestamp for aggressive cache busting
+      const timestamp = Date.now()
+      // Fetch from both APIs to get complete data
+      const [newApiResponse, oldApiResponse] = await Promise.all([
+        fetch(`/api/analytics/occupancy/kpis?t=${timestamp}`, {
+          cache: 'no-store',
+          headers: { 
+            'Cache-Control': 'no-cache, no-store, must-revalidate',
+            'Pragma': 'no-cache',
+            'Expires': '0'
+          }
+        }),
+        fetch(`/api/occupancy/kpis?asOf=latest&t=${timestamp}`, {
+          cache: 'no-store',
+          headers: { 
+            'Cache-Control': 'no-cache, no-store, must-revalidate',
+            'Pragma': 'no-cache',
+            'Expires': '0'
+          }
+        })
+      ])
+
+      const newData = await newApiResponse.json()
+      const oldApiRaw = await oldApiResponse.json()
+
+      // Extract data from old API response wrapper
+      const oldData = oldApiRaw.success ? oldApiRaw.data : oldApiRaw
+
+      if (newData.total_units !== undefined) {
+        // Combine data: use new API for unit counts, old API for student/non-student breakdowns
+        const combinedData = {
+          ...newData,
+          // Add student/non-student data from old API if available
+          occupancy_student: oldData?.occupancy_student,
+          occupancy_non_student: oldData?.occupancy_non_student,
+          // Keep overall occupancy from new API but provide fallback
+          occupancy_all: newData.occupancy_rate_pct || oldData?.occupancy_all
+        }
+
+        setOccupancyKPIs(combinedData)
+        // Check if we have zero total units (indicating no data)
+        const hasNoData = !combinedData || combinedData.total_units === 0
+        setShowNoCoverageWarning(hasNoData)
+      } else {
+        setOccupancyKPIs(null)
+        setShowNoCoverageWarning(true)
+        console.error('Failed to load occupancy KPIs:', newData.error)
+      }
+    } catch (error) {
+      console.error('Error loading occupancy KPIs:', error)
+      setOccupancyKPIs(null)
+      setShowNoCoverageWarning(true)
+    }
+  }
+
+
+  if (!category) {
+    return (
+      <div className="space-y-6">
+        <div className="flex items-center space-x-4">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => router.push('/analytics')}
+            className="flex items-center space-x-2"
+          >
+            <ArrowLeft className="h-4 w-4" />
+            <span>Back to Analytics</span>
+          </Button>
+        </div>
+        <Card>
+          <CardHeader>
+            <CardTitle>Category Not Found</CardTitle>
+            <CardDescription>
+              The requested analytics category does not exist.
+            </CardDescription>
+          </CardHeader>
+        </Card>
+      </div>
+    )
+  }
+
+  const IconComponent = category.icon
+
+  return (
+    <div className="space-y-6">
+      {/* Breadcrumb and Back Navigation */}
+      <div className="space-y-3">
+        <nav className="flex items-center space-x-2 text-sm text-muted-foreground">
+          <span 
+            className="hover:text-primary cursor-pointer transition-colors"
+            onClick={() => router.push('/overview')}
+          >
+            Home
+          </span>
+          <span>/</span>
+          <span 
+            className="hover:text-primary cursor-pointer transition-colors"
+            onClick={() => router.push('/analytics')}
+          >
+            Analytics
+          </span>
+          <span>/</span>
+          <span className="text-foreground font-medium">{category.title}</span>
+        </nav>
+
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => router.push('/analytics')}
+            className="flex items-center space-x-2 w-fit"
+          >
+            <ArrowLeft className="h-4 w-4" />
+            <span className="hidden sm:inline">Back to Analytics</span>
+            <span className="sm:hidden">Back</span>
+          </Button>
+          {isDev && categoryKey === 'occupancy' && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setShowDevControls(!showDevControls)}
+              className="flex items-center space-x-2 w-fit"
+            >
+              <Settings className="h-4 w-4" />
+              <span>Dev Controls</span>
+            </Button>
+          )}
+        </div>
+      </div>
+
+      {/* Category Header */}
+      <div className="space-y-4">
+        <div className="flex items-center space-x-4">
+          <div className="p-3 rounded-lg bg-primary/10 border border-primary/20">
+            <IconComponent className="h-8 w-8 text-primary" />
+          </div>
+          <div>
+            <h1 className="text-3xl font-bold">{category.title}</h1>
+            <p className="text-muted-foreground mt-1">{category.description}</p>
+          </div>
+        </div>
+      </div>
+
+      {/* Content Area */}
+      <div className="grid gap-6">
+        {isLoading ? (
+          <div className="space-y-4">
+            <AnalyticsLoadingState />
+
+          </div>
+        ) : hasData ? (
+          // Show actual KPI cards for occupancy and operations, generic dashboard for others
+          categoryKey === 'occupancy' && occupancyKPIs ? (
+            <div className="space-y-6">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h2 className="text-lg font-semibold">Occupancy & Leasing KPIs</h2>
+                  <p className="text-sm text-muted-foreground">
+                    Automatically updated daily from AppFolio data
+                  </p>
+                </div>
+
+                {isDev && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => setShowDevControls(!showDevControls)}
+                    className="flex items-center space-x-2"
+                  >
+                    <Settings className="h-4 w-4" />
+                    <span>Dev</span>
+                  </Button>
+                )}
+              </div>
+
+              {isDev && showDevControls && (
+                <Card className="bg-yellow-50 border-yellow-200">
+                  <CardHeader>
+                    <CardTitle className="text-sm">Development Controls</CardTitle>
+                  </CardHeader>
+                  <CardContent className="pt-0">
+                    <div className="flex items-center space-x-2">
+                      <input
+                        type="text"
+                        placeholder="Unit code (e.g., 216)"
+                        value={newOverride.unitCode}
+                        onChange={(e) => setNewOverride(prev => ({ ...prev, unitCode: e.target.value }))}
+                        className="px-3 py-2 border rounded text-sm"
+                      />
+                      <select
+                        value={newOverride.isStudent ? 'student' : 'non-student'}
+                        onChange={(e) => setNewOverride(prev => ({ ...prev, isStudent: e.target.value === 'student' }))}
+                        className="px-3 py-2 border rounded text-sm"
+                      >
+                        <option value="student">Student</option>
+                        <option value="non-student">Non-Student</option>
+                      </select>
+                      <Button size="sm" onClick={handleAddOverride}>
+                        Add Override
+                      </Button>
+                    </div>
+                  </CardContent>
+                </Card>
+              )}
+
+              {showNoCoverageWarning && (
+                <div className="mb-4 p-4 bg-red-50 border border-red-200 rounded-lg">
+                  <div className="flex items-center space-x-3">
+                    <div className="h-5 w-5 bg-red-500 rounded-full flex-shrink-0"></div>
+                    <div>
+                      <h3 className="text-sm font-medium text-red-800">No rows in snapshot — check Data Coverage</h3>
+                      <p className="text-sm text-red-600 mt-1">
+                        Analytics data is empty. 
+                        <a 
+                          href="/api/analytics/occupancy/diag" 
+                          target="_blank" 
+                          rel="noopener noreferrer"
+                          className="ml-1 underline hover:no-underline"
+                        >
+                          View diagnostics →
+                        </a>
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {isDev && showDataQualityWarning && auditData && (
+                <div className="mb-4 p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center space-x-3">
+                      <div className="h-5 w-5 bg-yellow-500 rounded-full flex-shrink-0"></div>
+                      <div>
+                        <h3 className="text-sm font-medium text-yellow-800">Data Quality Issues Detected</h3>
+                        <div className="text-sm text-yellow-700 mt-1">
+                          {auditData.nulls?.master_unit_code_null > 0 && (
+                            <div>• {auditData.nulls.master_unit_code_null} rows with missing unit codes</div>
+                          )}
+                          {auditData.nulls?.master_bad_occupied?.some((item: any) => item.t !== 'integer') && (
+                            <div>• Non-integer values in occupancy field</div>
+                          )}
+                          {auditData.nulls?.master_bad_student?.some((item: any) => item.t !== 'integer') && (
+                            <div>• Non-integer values in student flag field</div>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                    <Button
+                      size="sm"
+                      onClick={handleRebuild}
+                      disabled={isRebuilding}
+                      className="text-xs"
+                    >
+                      {isRebuilding ? (
+                        <>
+                          <Loader2 className="h-3 w-3 animate-spin mr-2" />
+                          Rebuilding...
+                        </>
+                      ) : (
+                        'Re-map & Rebuild'
+                      )}
+                    </Button>
+                  </div>
+                </div>
+              )}
+
+              <OccupancyKPICards kpis={occupancyKPIs} />
+            </div>
+          ) : categoryKey === 'operations' && operationalKPIs ? (
+            <div className="space-y-6">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h2 className="text-lg font-semibold">Operational Efficiency KPIs</h2>
+                  <p className="text-sm text-muted-foreground">
+                    Automatically updated daily from property management data
+                  </p>
+                </div>
+              </div>
+
+              <OperationalKPICards kpis={operationalKPIs} />
+            </div>
+          ) : (
+            // Generic placeholder for other categories (financial, forecasts)
+            <div className="space-y-6">
+              <AnalyticsEmptyState 
+                title={`${category.title} Coming Soon`}
+                description={`Comprehensive ${category.title.toLowerCase()} analytics and insights will be available in a future update.`}
+                showConnectButton={!appfolioConnected && categoryKey !== 'forecasts'}
+              />
+
+              {/* Crosswalk and Source Quality Info */}
+              {isDev && (crosswalkStats || Object.keys(sourceDistribution).length > 0) && (
+                <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                  <h3 className="text-sm font-medium text-blue-800 mb-2">Data Processing Summary</h3>
+                  <div className="space-y-2 text-sm text-blue-700">
+                    {crosswalkStats && (
+                      <div>
+                        <span className="font-medium">Crosswalk built:</span> {crosswalkStats.total} units 
+                        (directory: {crosswalkStats.via_directory}, regex: {crosswalkStats.via_regex}, direct: {crosswalkStats.via_direct})
+                      </div>
+                    )}
+
+                    {Object.keys(sourceDistribution).length > 0 && (
+                      <div>
+                        <span className="font-medium">Occupancy sources:</span>{' '}
+                        {Object.entries(sourceDistribution).map(([source, count]) => 
+                          `${source}: ${count}`
+                        ).join(', ')}
+                      </div>
+                    )}
+
+                    {sourceDistribution.lease_dates === 0 && sourceDistribution.status === 0 && (
+                      <div className="bg-yellow-100 border border-yellow-300 rounded px-2 py-1 mt-2">
+                        <span className="text-yellow-800">⚠️ No lease dates/status found in rent_roll; using vacancy fallback</span>
+                        {' '}
+                        <a 
+                          href="/api/appfolio/reports/rent_roll/peek" 
+                          target="_blank"
+                          className="underline hover:no-underline"
+                        >
+                          View fields →
+                        </a>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* Data Sources Status */}
+              <div className="text-xs text-muted-foreground border-t pt-2">
+                <span className="font-medium">Sources:</span>
+                {' '}
+                <span>rent_roll {sourceStatus.rent_roll ? '✓' : '✗'}</span>
+                {' | '}
+                <span>unit_vacancy {sourceStatus.unit_vacancy ? '✓' : '✗'}</span>
+                {' | '}
+                <span>lease_history {sourceStatus.lease_history ? '✓' : '✗'}</span>
+                {' | '}
+                <span>lease_expiration_detail {sourceStatus.lease_expiration_detail ? '✓' : '✗'}</span>
+                {' | '}
+                <span>unit_directory {sourceStatus.unit_directory ? '✓' : '✗'}</span>
+
+                {isDev && (
+                  <div className="mt-1">
+                    <span className="font-medium">Field peek:</span>
+                    {' '}
+                    <a href="/api/appfolio/reports/rent_roll/peek" target="_blank" className="underline hover:no-underline text-blue-600">rent_roll</a>
+                    {' | '}
+                    <a href="/api/appfolio/reports/unit_directory/peek" target="_blank" className="underline hover:no-underline text-blue-600">unit_directory</a>
+                    {' | '}
+                    <a href="/api/appfolio/reports/lease_history/peek" target="_blank" className="underline hover:no-underline text-blue-600">lease_history</a>
+                    {' | '}
+                    <a href="/api/appfolio/reports/unit_vacancy/peek" target="_blank" className="underline hover:no-underline text-blue-600">unit_vacancy</a>
+                    {' | '}
+                    <a href="/api/appfolio/reports/lease_expiration_detail/peek" target="_blank" className="underline hover:no-underline text-blue-600">lease_expiration_detail</a>
+                  </div>
+                )}
+              </div>
+
+              {/* Development Controls */}
+              {isDev && (
+                <div className="border-t pt-3 mt-3">
+                  <div className="flex items-center justify-between mb-3">
+                    <h4 className="text-sm font-medium text-muted-foreground">Developer Controls</h4>
+                  </div>
+                  <div className="flex gap-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={handleRemap}
+                      disabled={isRemapping}
+                      className="text-xs"
+                    >
+                      {isRemapping ? (
+                        <>
+                          <Loader2 className="h-3 w-3 animate-spin mr-2" />
+                          Re-mapping...
+                        </>
+                      ) : (
+                        'Re-map Columns & Rebuild'
+                      )}
+                    </Button>
+                  </div>
+                </div>
+              )}
+            </div>
+          ) : (
+            // Generic dashboard for other categories
+            <Card>
+              <CardHeader>
+                <CardTitle>Data Dashboard</CardTitle>
+                <CardDescription>
+                  Your {category.title.toLowerCase()} analytics and insights
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <p className="text-sm text-muted-foreground">
+                  Charts, tables, and analytics would appear here when data is connected.
+                </p>
+              </CardContent>
+            </Card>
+          )
+        ) : (
+          // Show connection requirement for occupancy
+          categoryKey === 'occupancy' ? (
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center space-x-2">
+                  <Building2 className="h-5 w-5" />
+                  <span>Occupancy Analytics</span>
+                </CardTitle>
+                <CardDescription>
+                  Connect to AppFolio to automatically sync and display occupancy KPIs
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="text-sm text-muted-foreground">
+                  {!appfolioConnected ? (
+                    <p>
+                      Connect to AppFolio in Data Connections to enable automatic daily sync 
+                      of occupancy analytics including rent roll, vacancy, and lease data.
+                    </p>
+                  ) : (
+                    <p>
+                      AppFolio is connected but no analytics data is available. 
+                      The system will automatically sync data when you first visit this page each day.
+                    </p>
+                  )}
+                </div>
+
+                {!appfolioConnected && (
+                  <Button
+                    onClick={() => router.push('/settings/data-connections')}
+                    className="w-full"
+                  >
+                    <Building2 className="h-4 w-4 mr-2" />
+                    Connect AppFolio
+                  </Button>
+                )}
+              </CardContent>
+            </Card>
+          ) : (
+            <AnalyticsEmptyState 
+              category={category.title} 
+              isConnected={appfolioConnected}
+            />
+          )
+        )}
+
+
+      </div>
+    </div>
+  )
+}

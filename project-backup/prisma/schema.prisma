@@ -1,0 +1,527 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String?
+  access_token      String?
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String?
+  session_state     String?
+  user              User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model User {
+  id            String           @id @default(cuid())
+  name          String?
+  email         String?          @unique
+  emailVerified DateTime?
+  image         String?
+  role          Role             @default(LEVEL_1)
+  createdAt     DateTime         @default(now())
+  accounts      Account[]
+  sessions      Session[]
+  tasks         Task[]
+  preferences   UserPreferences?
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+}
+
+model Feature {
+  id           String        @id @default(cuid())
+  key          String        @unique
+  name         String
+  description  String
+  enabled      Boolean       @default(true)
+  sortOrder    Int           @default(0)
+  createdAt    DateTime      @default(now())
+  roleFeatures RoleFeature[]
+}
+
+model RoleFeature {
+  id        String  @id @default(cuid())
+  role      Role
+  featureId String
+  hasAccess Boolean @default(false)
+  feature   Feature @relation(fields: [featureId], references: [id], onDelete: Cascade)
+
+  @@unique([role, featureId])
+}
+
+model Task {
+  id        String   @id @default(cuid())
+  userId    String
+  title     String
+  done      Boolean  @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model UserPreferences {
+  id              String   @id @default(cuid())
+  userId          String   @unique
+  navigationOrder String? // JSON array of feature keys in order
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model DailySyncStatus {
+  id                 String   @id @default("sync_status_singleton")
+  lastSyncDate       String?
+  lastSyncSuccess    Boolean  @default(false)
+  lastSyncDurationMs Int      @default(0)
+  totalRecords       Int      @default(0)
+  errorMessage       String?
+  updatedAt          DateTime @default(now()) @updatedAt
+  createdAt          DateTime @default(now())
+}
+
+model RawAppfolioProperty {
+  id          String   @id @default(cuid())
+  sourceId    String   @unique
+  payloadJson Json
+  ingestedAt  DateTime
+
+  @@map("raw_appfolio_properties")
+}
+
+model RawAppfolioUnit {
+  id          String   @id @default(cuid())
+  sourceId    String   @unique
+  payloadJson Json
+  ingestedAt  DateTime
+
+  @@map("raw_appfolio_units")
+}
+
+model RawAppfolioLease {
+  id          String   @id @default(cuid())
+  sourceId    String   @unique
+  payloadJson Json
+  ingestedAt  DateTime
+
+  @@map("raw_appfolio_leases")
+}
+
+model RawAppfolioTenant {
+  id          String   @id @default(cuid())
+  sourceId    String   @unique
+  payloadJson Json
+  ingestedAt  DateTime
+
+  @@map("raw_appfolio_tenants")
+}
+
+model RawAppfolioTransaction {
+  id          String   @id @default(cuid())
+  sourceId    String   @unique
+  payloadJson Json
+  ingestedAt  DateTime
+
+  @@map("raw_appfolio_transactions")
+}
+
+model RawAppfolioWorkOrder {
+  id          String   @id @default(cuid())
+  sourceId    String   @unique
+  payloadJson Json
+  ingestedAt  DateTime
+
+  @@map("raw_appfolio_work_orders")
+}
+
+model ReportCheckpoint {
+  id                   String    @id @default(cuid())
+  reportId             String    @unique
+  lastIngestedAt       DateTime?
+  lastSuccessfulRun    DateTime?
+  totalRecordsIngested Int       @default(0)
+  lastError            String?
+  status               String    @default("pending")
+  resumeMetadata       String?
+  // DELTA INGESTION: High-water marks for optimized sync
+  lastSeenUpdatedAt    DateTime? // Track latest updated_at for delta filtering
+  lastSeenId           String? // Track latest record ID for sequential filtering
+  deltaRecordsSkipped  Int       @default(0) // Performance metric: records skipped due to delta
+
+  @@map("report_checkpoints")
+}
+
+model IntegrationState {
+  id        String   @id @default(cuid())
+  key       String   @unique
+  json      Json
+  updatedAt DateTime
+
+  @@map("integration_state")
+}
+
+model AnalyticsMeta {
+  id             String    @id @default(cuid())
+  metaId         Int       @unique
+  lastSnapshotAt DateTime?
+  totalRows      Int?
+
+  @@map("analytics_meta")
+}
+
+model AnalyticsMaster {
+  id                String    @id @default(cuid())
+  snapshotDate      DateTime  @map("snapshot_date") @db.Date
+  propertyId        String    @map("property_id")
+  unitCode          String    @map("unit_code")
+  bedspaceCode      String?   @map("bedspace_code")
+  tenantId          String?   @map("tenant_id")
+  leaseId           String?   @map("lease_id")
+  isOccupied        Boolean   @map("is_occupied")
+  studentFlag       Boolean   @map("student_flag")
+  primaryTenantFlag Boolean?  @map("primary_tenant_flag")
+  marketRent        Float?    @map("market_rent")
+  mrr               Float?
+  moveIn            DateTime? @map("move_in") @db.Date
+  moveOut           DateTime? @map("move_out") @db.Date
+  leaseStart        DateTime? @map("lease_start") @db.Date
+  leaseEnd          DateTime? @map("lease_end") @db.Date
+  daysVacant        Int?      @map("days_vacant")
+  vacancyLoss       Float?    @map("vacancy_loss")
+  updatedAt         DateTime  @map("updated_at")
+
+  @@unique([snapshotDate, unitCode, bedspaceCode])
+  @@index([snapshotDate])
+  @@index([unitCode])
+  @@index([isOccupied, snapshotDate])
+  @@map("analytics_master")
+}
+
+model AnalyticsTenantDaily {
+  id                String   @id @default(cuid())
+  snapshotDate      DateTime @map("snapshot_date") @db.Date
+  propertyId        String   @map("property_id")
+  unitCode          String   @map("unit_code")
+  leaseId           String?  @map("lease_id")
+  tenantId          String   @map("tenant_id")
+  isPrimary         Boolean  @map("is_primary") @default(false)
+  cosignerFlag      Boolean  @map("cosigner_flag") @default(false)
+  studentFlag       Boolean  @map("student_flag") @default(false)
+  householdSize     Int?     @map("household_size")
+  leaseLengthDays   Int?     @map("lease_length_days")
+  tenureDays        Int?     @map("tenure_days")
+  paymentPlanActive Boolean  @map("payment_plan_active") @default(false)
+  updatedAt         DateTime @map("updated_at")
+
+  @@unique([snapshotDate, tenantId, leaseId])
+  @@index([snapshotDate])
+  @@index([unitCode, snapshotDate])
+  @@index([propertyId, snapshotDate])
+  @@map("analytics_tenant_daily")
+}
+
+model MasterTenantData {
+  id           String   @id @default(cuid())
+  snapshotDate DateTime @map("snapshot_date") @db.Date
+  unitCode     String   @map("unit_code")
+  isOccupied   Boolean  @map("is_occupied")
+  mrrAmount    Float?   @map("mrr_amount")
+  marketRent   Float?   @map("market_rent")
+  updatedAt    DateTime @map("updated_at")
+
+  @@unique([snapshotDate, unitCode])
+  @@index([snapshotDate])
+  @@map("master_tenant_data")
+}
+
+model MasterCsvData {
+  id               String   @id @default(cuid())
+  unit             String   @unique
+  firstName        String?
+  lastName         String?
+  fullName         String?
+  phoneNumber      String?
+  email            String?
+  leaseStartDate   String?
+  leaseEndDate     String?
+  moveInDate       String?
+  monthlyRent      Float    @default(0)
+  marketRent       Float    @default(0)
+  daysVacant       Int      @default(0)
+  securityDeposit  Float    @default(0)
+  tenantStatus     String?
+  tenantType       String?
+  primaryTenant    String?
+  squareFeet       String?
+  unitType         String?
+  unitCategory     String?
+  leasingAgent     String?
+  nextRentIncrease String?
+  lastRentIncrease String?
+  syncDate         String?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  @@map("master_csv_data")
+}
+
+model KvStore {
+  id        String   @id @default(cuid())
+  key       String   @unique
+  value     String
+  updatedAt DateTime @default(now())
+
+  @@map("kv_store")
+}
+
+model OccupancyDailyKPI {
+  id                  String   @id @default(cuid())
+  snapshotDate        DateTime @map("snapshot_date") @db.Date
+  scope               String   @default("portfolio")
+  totalUnits          Int      @map("total_units")
+  occupiedUnits       Int      @map("occupied_units")
+  vacantUnits         Int      @map("vacant_units")
+  occupancyRatePct    Float    @map("occupancy_rate_pct")
+  occupancyStudent    Float?   @map("occupancy_student")
+  occupancyNonStudent Float?   @map("occupancy_non_student")
+  avgVacancyDays      Int?     @map("avg_vacancy_days")
+  moveInsMTD          Int      @map("move_ins_mtd") @default(0)
+  moveOutsMTD         Int      @map("move_outs_mtd") @default(0)
+  expirations30       Int      @map("expirations_30") @default(0)
+  expirations60       Int      @map("expirations_60") @default(0)
+  expirations90       Int      @map("expirations_90") @default(0)
+  calcVersion         String   @map("calc_version") @default("v1")
+  computedAt          DateTime @map("computed_at") @default(now())
+  createdAt           DateTime @map("created_at") @default(now())
+  updatedAt           DateTime @map("updated_at") @updatedAt
+
+  @@unique([snapshotDate, scope])
+  @@index([snapshotDate])
+  @@index([scope, snapshotDate])
+  @@map("occupancy_daily_kpi")
+}
+
+model UnitCrosswalk {
+  rawUnitText  String   @id
+  unitCodeNorm String
+  derivedVia   String
+  createdAt    DateTime @default(now())
+
+  @@index([unitCodeNorm])
+  @@map("unit_crosswalk")
+}
+
+// ARCHITECTURE FIX: Temporary table for analytics processing with snake_case mapping
+model AnalyticsMasterTemp {
+  id                String    @id @default(uuid())
+  snapshotDate      DateTime  @map("snapshot_date") @db.Date
+  propertyId        String    @map("property_id")
+  unitCode          String    @map("unit_code")
+  unitCodeNorm      String?   @map("unit_code_norm")
+  bedspaceCode      String?   @map("bedspace_code")
+  leaseId           String?   @map("lease_id")
+  tenantId          String?   @map("tenant_id")
+  isOccupied        Int       @map("is_occupied")
+  occupancySource   String?   @map("occupancy_source")
+  studentFlag       Int       @map("student_flag")
+  studentFlagSource String?   @map("student_flag_source")
+  primaryTenantFlag Int?      @map("primary_tenant_flag")
+  marketRent        Float?    @map("market_rent")
+  mrr               Float?
+  moveIn            DateTime? @map("move_in") @db.Date
+  moveOut           DateTime? @map("move_out") @db.Date
+  leaseStart        DateTime? @map("lease_start") @db.Date
+  leaseEnd          DateTime? @map("lease_end") @db.Date
+  daysVacant        Int?      @map("days_vacant")
+  vacancyLoss       Float?    @map("vacancy_loss")
+  updatedAt         DateTime  @map("updated_at")
+  createdAt         DateTime  @default(now()) @map("created_at")
+
+  @@unique([snapshotDate, unitCode, bedspaceCode])
+  @@index([snapshotDate])
+  @@map("analytics_master_temp")
+}
+
+model JobLock {
+  jobName     String   @id
+  jobId       String
+  acquiredAt  DateTime
+  expiresAt   DateTime
+  processInfo String?
+  heartbeatAt DateTime @default(now())
+  createdAt   DateTime @default(now())
+
+  @@map("job_locks")
+}
+
+// Job Queue Architecture - Durable background job processing
+model JobQueue {
+  id          String    @id @default(cuid())
+  type        JobType
+  payload     String? // JSON stored as string for compatibility
+  status      JobStatus @default(QUEUED)
+  priority    Int       @default(0)
+  runAt       DateTime  @default(now()) @map("run_at")
+  attempts    Int       @default(0)
+  maxAttempts Int       @default(3) @map("max_attempts")
+  dedupeKey   String?   @unique @map("dedupe_key") // For preventing duplicate jobs
+  lastError   String?   @map("last_error")
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
+
+  jobRuns JobRun[]
+
+  @@index([status, runAt, priority])
+  @@index([dedupeKey])
+  @@index([type])
+  @@map("job_queue")
+}
+
+model JobRun {
+  id           String    @id @default(cuid())
+  jobId        String    @map("job_id")
+  workerId     String    @map("worker_id")
+  startedAt    DateTime  @default(now()) @map("started_at")
+  heartbeatAt  DateTime? @default(now()) @map("heartbeat_at")
+  finishedAt   DateTime? @map("finished_at")
+  durationMs   Int?      @map("duration_ms")
+  success      Boolean?
+  error        String?
+  retryOfJobId String?   @map("retry_of_job_id") // References another job_queue.id
+  logs         String? // JSON stored as string
+  createdAt    DateTime  @default(now()) @map("created_at")
+
+  job JobQueue @relation(fields: [jobId], references: [id])
+
+  @@index([jobId])
+  @@index([startedAt])
+  @@index([workerId])
+  @@map("job_runs")
+}
+
+// ARCHITECTURE FIX: Sync locks for daily sync manager distributed locking
+model SyncLock {
+  id              String    @id
+  owner           String
+  expiresAt       DateTime  @map("expires_at")
+  acquiredAt      DateTime? @map("acquired_at")
+  startedAt       DateTime? @map("started_at")
+  currentProgress String?   @map("current_progress")
+  currentStep     Int?      @map("current_step")
+  syncType        String?   @map("sync_type")
+  createdAt       DateTime  @default(now()) @map("created_at")
+  updatedAt       DateTime  @updatedAt @map("updated_at")
+
+  @@map("sync_locks")
+}
+
+model CircuitBreakerState {
+  jobName             String    @id
+  failureCount        Int       @default(0)
+  lastFailureAt       DateTime?
+  lastTimeoutAt       DateTime?
+  consecutiveFailures Int       @default(0)
+  breakerOpenUntil    DateTime?
+  totalExecutions     Int       @default(0)
+  totalFailures       Int       @default(0)
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+
+  @@map("circuit_breaker_state")
+}
+
+model StudentOverride {
+  unitCode  String   @id
+  isStudent Boolean
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([unitCode])
+  @@map("student_overrides")
+}
+
+// ARCHITECTURE FIX: AppFolio raw data ingestion tables for occupancy reports
+model RawAppfolioRentRoll {
+  id          String   @id @default(cuid())
+  sourceId    String   @unique
+  payloadJson Json
+  ingestedAt  DateTime
+
+  @@map("raw_appfolio_rent_roll")
+}
+
+model RawAppfolioLeaseHistory {
+  id          String   @id @default(cuid())
+  sourceId    String   @unique
+  payloadJson Json
+  ingestedAt  DateTime
+
+  @@map("raw_appfolio_lease_history")
+}
+
+model RawAppfolioLeaseExpirationDetail {
+  id          String   @id @default(cuid())
+  sourceId    String   @unique
+  payloadJson Json
+  ingestedAt  DateTime
+
+  @@map("raw_appfolio_lease_expiration_detail")
+}
+
+model RawAppfolioUnitDirectory {
+  id          String   @id @default(cuid())
+  sourceId    String   @unique
+  payloadJson Json
+  ingestedAt  DateTime
+
+  @@map("raw_appfolio_unit_directory")
+}
+
+enum Role {
+  ADMIN
+  LEVEL_1
+  LEVEL_2
+  LEVEL_3
+}
+
+enum JobStatus {
+  QUEUED
+  RUNNING
+  SUCCEEDED
+  FAILED
+  CANCELLED
+}
+
+enum JobType {
+  DAILY_SYNC
+  WEBHOOK_SYNC
+  MANUAL_SYNC
+  EMAIL_SEND
+  DATA_CLEANUP
+}

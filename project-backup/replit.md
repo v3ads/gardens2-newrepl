@@ -1,0 +1,37 @@
+# Overview
+
+Cynthia Gardens Command Center is a modern property management application built with Next.js 14. It provides comprehensive analytics and operational tools for managing residential properties, with a focus on enterprise production readiness, reliability, zero daily operational maintenance, and high performance. Key features include task management, analytics dashboards, AI-powered chat assistance, and user management, all designed with a modular and toggleable architecture.
+
+# User Preferences
+
+Preferred communication style: Simple, everyday language.
+
+**Production Deployment Protocol**: Always request explicit confirmation before making changes to deployed applications that would require redeployment. Explain the issue and proposed solution first, then let the user decide how to proceed.
+
+# System Architecture
+
+## UI/UX Decisions
+The application uses Next.js 14 with App Router and TypeScript, employing a three-panel layout (top dashboard, collapsible left navigation, dynamic main content). It leverages React Server Components, shadcn/ui, Tailwind CSS, and Radix UI for accessible components. The design system supports light and dark themes with a futuristic green color scheme.
+
+## Technical Implementations
+The backend uses Next.js API routes for RESTful endpoints covering analytics, data ingestion, feature, and user management. It includes a robust, modular ETL pipeline for data ingestion from AppFolio V1 reports, creating analytical data marts, normalizing data, and pre-calculating KPIs. This pipeline features per-page checkpointing, crash recovery, resumable operations, and distributed locking for fault tolerance. A PostgreSQL-backed job queue system handles asynchronous tasks with durable job persistence, exponential backoff retries, and automatic deduplication, managed by a dedicated background worker. Authentication is managed by NextAuth.js (Auth.js) with Google OAuth, supporting multi-domain deployment and role-based access control (ADMIN, LEVEL_1, LEVEL_2, LEVEL_3). Form validation is handled by React Hook Form and Zod.
+
+## System Design Choices
+- **Deployment**: The system operates on a Replit Reserved VM with a concurrent process architecture for the Next.js frontend and a dedicated background worker.
+- **Database**: A dual-database approach is used: Neon-hosted PostgreSQL for application data, KPIs, and sync management (managed by Prisma), and Better-SQLite3 for raw report storage and high-performance data processing. Both Drizzle schema (`shared/schema.ts`) and Prisma schema (`prisma/schema.prisma`) are utilized, with Prisma being the authoritative source. Schema changes are managed via migrations (`npm run db:push`), and `prisma db pull` is prohibited on production.
+- **Job Queue**: A PostgreSQL-backed durable job queue uses `SKIP LOCKED` for concurrency with a 5-second polling interval. Jobs follow a QUEUED → RUNNING → SUCCEEDED/FAILED lifecycle, with automatic retry and deduplication. Failed sync jobs trigger automated email notifications.
+- **Critical Reliability Fixes**: Implemented solutions for transaction timeouts in analytics, prevention of "zombie" sync locks, and elimination of worker polling recursion bugs.
+
+# External Dependencies
+
+- **Next.js 14+**: Application framework
+- **NextAuth.js**: Authentication and session management
+- **Prisma**: PostgreSQL ORM
+- **OpenAI**: AI assistant and NLP
+- **AppFolio V1 API**: Property management data source
+- **Tailwind CSS + shadcn/ui**: UI framework
+- **Radix UI**: Accessible component primitives
+- **Better-SQLite3**: High-performance SQLite driver
+- **React Hook Form + Zod**: Form validation
+- **Lucide React**: Icon library
+- **Next Themes**: Theme management
