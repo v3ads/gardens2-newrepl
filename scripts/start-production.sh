@@ -1,7 +1,5 @@
 #!/bin/bash
-
-# Production startup script for Cynthia Gardens Command Center
-# Runs both Next.js application and background worker
+# Standard production startup script
 
 set -e
 
@@ -13,7 +11,10 @@ echo "📊 Environment: production"
 echo "📍 Working directory: $(pwd)"
 echo "🕐 Started at: $(date)"
 
-# Run database migrations for production
+# Create logs directory
+mkdir -p /tmp/logs
+
+# Run database migrations
 echo "🔄 Running Prisma migrations..."
 if npx prisma migrate deploy; then
     echo "✅ Database migrations completed successfully"
@@ -22,20 +23,7 @@ else
     exit 1
 fi
 
-# SCHEMA DRIFT CHECK DISABLED - Manual fixes already applied
-# echo "🔍 Checking for schema drift..."
-# if npx prisma migrate diff --exit-code --from-schema-datamodel prisma/schema.prisma --to-schema-datasource prisma/schema.prisma; then
-#     echo "✅ Database schema matches Prisma schema"
-# else
-#     echo "⚠️  Schema drift detected - migrations may be needed"
-#     # Uncomment the line below to fail-fast on schema mismatch
-#     # exit 1
-# fi
-
-# Create logs directory
-mkdir -p /tmp/logs
-
-# CRITICAL: Generate Prisma client (in case deployment didn't)
+# Generate Prisma client (safety measure)
 echo "🔧 Ensuring Prisma client is generated..."
 if npx prisma generate; then
     echo "✅ Prisma client ready"
@@ -44,7 +32,7 @@ else
     exit 1
 fi
 
-# Verify build exists (deployment should have built it)
+# Verify build exists
 echo "🔍 Verifying production build exists..."
 if [ ! -f ".next/prerender-manifest.json" ]; then
     echo "⚠️ Build not found - this should have been built during deployment"
@@ -57,16 +45,16 @@ echo "✅ Production build verified"
 # Function to handle graceful shutdown
 cleanup() {
     echo "🛑 Shutting down services gracefully..."
-
+    
     # Send SIGTERM to all child processes
     for job in $(jobs -p); do
         echo "🔄 Stopping process $job"
         kill -TERM $job 2>/dev/null || true
     done
-
+    
     # Wait for processes to finish
     wait
-
+    
     echo "👋 All services stopped"
     exit 0
 }
@@ -111,7 +99,7 @@ while true; do
         WORKER_PID=$!
         echo "🔄 Worker restarted (PID: $WORKER_PID)"
     fi
-
+    
     if ! kill -0 $NEXTJS_PID 2>/dev/null; then
         echo "❌ Next.js application died, restarting..."
         # Kill any lingering Node processes on port 5000
@@ -121,7 +109,7 @@ while true; do
         NEXTJS_PID=$!
         echo "🔄 Next.js restarted (PID: $NEXTJS_PID)"
     fi
-
+    
     # Wait 30 seconds before next health check
     sleep 30
 done
