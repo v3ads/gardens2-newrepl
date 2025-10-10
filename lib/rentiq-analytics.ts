@@ -102,7 +102,7 @@ export class RentIQAnalytics {
         'Unit': mtd.unitCode,
         'Tenant Status': mtd.isOccupied ? 'Current' : 'Vacant',
         'Monthly Rent': mtd.mrrAmount,
-        'Market Rent': mtd.marketRent,
+        'Market Rent': csvDataMap.get(mtd.unitCode)?.marketRent || mtd.marketRent, // Use CSV market rent (correct) over masterTenantData (NULL)
         'Unit Type': csvDataMap.get(mtd.unitCode)?.unitType || 'Standard'
       }))
 
@@ -197,7 +197,7 @@ export class RentIQAnalytics {
         units_needed_for_95: unitsNeededFor95,
         rentiq_active: rentiqActive,
         rentiq_units: rentiqUnits,
-        thresholds: [] // Default empty thresholds
+        thresholds: await this.getThresholdsArray() // Load actual thresholds
       }
 
       // Store results in database for caching
@@ -329,5 +329,93 @@ export class RentIQAnalytics {
       console.warn(`[RENTIQ] Failed to get results for ${date}:`, error)
       return null
     }
+  }
+
+  /**
+   * Get threshold settings
+   */
+  async getThresholds(): Promise<Record<string, number>> {
+    try {
+      // Try to load from database
+      const stored = await prisma.kvStore.findUnique({
+        where: { key: 'rentiq_thresholds' }
+      })
+
+      if (stored?.value) {
+        try {
+          const parsed = JSON.parse(stored.value)
+          console.log(`[RENTIQ] ✅ Loaded thresholds from database:`, parsed)
+          return parsed
+        } catch (error) {
+          console.warn('[RENTIQ] Failed to parse stored thresholds, using defaults:', error)
+        }
+      }
+    } catch (error) {
+      console.warn('[RENTIQ] Failed to load thresholds from database, using defaults:', error)
+    }
+
+    // Return defaults if not found in database
+    const defaults = {
+      'min_basic_unfurnished': 1700,
+      'min_basic_furnished': 1900,
+      'min_upgraded_unfurnished': 1720,
+      'min_upgraded_furnished': 2000,
+      'min_premium_unfurnished': 2100,
+      'min_premium_furnished': 2250,
+      'min_student_unit': 1500
+    }
+
+    console.log(`[RENTIQ] Using default thresholds`)
+    return defaults
+  }
+
+  /**
+   * Update threshold settings
+   */
+  async updateThresholds(thresholds: Record<string, number>): Promise<void> {
+    try {
+      const thresholdsJson = JSON.stringify(thresholds)
+      
+      await prisma.kvStore.upsert({
+        where: { key: 'rentiq_thresholds' },
+        create: {
+          key: 'rentiq_thresholds',
+          value: thresholdsJson,
+          updatedAt: new Date()
+        },
+        update: {
+          value: thresholdsJson,
+          updatedAt: new Date()
+        }
+      })
+      
+      console.log(`[RENTIQ] ✅ Saved ${Object.keys(thresholds).length} thresholds to database:`, thresholds)
+    } catch (error) {
+      console.error('[RENTIQ] ❌ Failed to save thresholds:', error)
+      throw new Error(`Failed to save thresholds: ${error instanceof Error ? error.message : 'Unknown error'}`)
+    }
+  }
+
+  /**
+   * Get threshold settings as array (for internal use)
+   */
+  private async getThresholdsArray(): Promise<RentIQThreshold[]> {
+    const thresholdRecord = await this.getThresholds()
+    
+    const thresholds: RentIQThreshold[] = []
+    
+    for (const [key, value] of Object.entries(thresholdRecord)) {
+      const categoryName = key.replace('min_', '').split('_').map(word => 
+        word.charAt(0).toUpperCase() + word.slice(1)
+      ).join('-')
+      
+      thresholds.push({
+        config_key: key,
+        category_name: categoryName,
+        min_rent: value
+      })
+    }
+    
+    return thresholds
   }
 }
