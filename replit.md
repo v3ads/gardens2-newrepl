@@ -4,9 +4,10 @@ Cynthia Gardens Command Center is a modern property management application built
 
 ## Current Version
 
-**v16.0.0** (Released: 2025-10-10)
+**v17.0.0** (Released: 2025-10-10)
 
 ### Recent Changes
+- **v17.0.0** (2025-10-10): Fixed critical RentIQ bugs causing incorrect pool calculations. Root causes: (1) Timezone mismatch - Prisma exact date match failed with Eastern-stored dates; implemented date range query. (2) Wrong data source - both daily-sync and API were using broken `rentiq-analytics-advanced.ts` that queried analytics_master with NULL market rents; switched to working `rentiq-analytics.ts` that uses master_csv_data. Results: Pool count fixed from 0 to 34 units, occupied units corrected from 166 to 139. Deprecated old file with warning.
 - **v16.0.0** (2025-10-10): Fixed critical sync failures by implementing AppFolio duplicate record deduplication. Resolved constraint violations from duplicate `(unit_code, bedspace_code)` combinations. Sync now processes 5,372 records with zero errors.
 - **v15.0.0** (Previous): Production deployment baseline
 - **v14.0.0** (2025-09-29): Job queue & worker architecture perfection - eliminated polling recursion bug, fixed JobType enum mismatch, resolved parity monitor constraint violations
