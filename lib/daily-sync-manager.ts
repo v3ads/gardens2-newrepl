@@ -1582,9 +1582,12 @@ export class DailySyncManager {
       console.log(`[ANALYTICS_MASTER] Processing ${csvData.length} units from master CSV`)
       
       // Clear existing data for this snapshot date
+      // CRITICAL FIX: Use explicit UTC midnight to ensure consistent date comparison
+      const snapshotDateForDb = new Date(`${snapshotDate}T00:00:00.000Z`)
+      console.log(`[ANALYTICS_MASTER] Deleting old analytics_master data for ${snapshotDate} (${snapshotDateForDb.toISOString()})...`)
       await withPrismaRetry(() => 
         prisma.analyticsMaster.deleteMany({
-          where: { snapshotDate: EasternTimeManager.createEasternDate(snapshotDate) }
+          where: { snapshotDate: snapshotDateForDb }
         })
       )
       
@@ -1603,7 +1606,7 @@ export class DailySyncManager {
         const vacancyLoss = isOccupied ? 0 : marketRent
         
         return {
-          snapshotDate: EasternTimeManager.createEasternDate(snapshotDate),
+          snapshotDate: snapshotDateForDb, // Use same normalized date as DELETE
           propertyId: 'CG001', // Standard property ID
           unitCode: row.unit || '',
           bedspaceCode: row.unit || '', // Use unit as fallback
