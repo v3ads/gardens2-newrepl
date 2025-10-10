@@ -68,12 +68,12 @@ export default function App() {
           setUploadComplete(true);
           toast({
             title: 'Backup restored successfully',
-            description: 'Your project files have been replaced. Reloading page...',
+            description: 'Files extracted. Page will reload in 2 seconds...',
           });
-          // Reload immediately after showing the message
+          // Give file system time to settle before reload
           setTimeout(() => {
             window.location.reload();
-          }, 1000);
+          }, 2000);
         } else {
           const response = xhr.responseText;
           let errorMessage = 'Upload failed';

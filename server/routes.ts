@@ -64,14 +64,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
       console.log('Sending success response');
       res.status(200).json({ 
         message: 'Backup restored successfully. Files have been extracted and replaced.',
-        filename: req.file.originalname 
+        filename: req.file.originalname,
+        filesExtracted: fileList.length
       });
-
-      // Restart the server after a short delay to allow response to be sent
-      setTimeout(() => {
-        console.log('Restarting server to load new files...');
-        process.exit(0); // The process manager will restart the server
-      }, 500);
     } catch (error) {
       // Clean up on error
       if (fs.existsSync(tarFilePath)) {
