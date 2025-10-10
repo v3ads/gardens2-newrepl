@@ -1,26 +1,28 @@
+
 import type { Express } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
 import multer from 'multer';
+import tar from 'tar';
+import fs from 'fs';
+import path from 'path';
 
 export async function registerRoutes(app: Express): Promise<Server> {
-  // put application routes here
-  // prefix all routes with /api
-
-  // use storage to perform CRUD operations on the storage interface
-  // e.g. storage.insertUser(user) or storage.getUserByUsername(username)
-
   const upload = multer({
     storage: multer.diskStorage({
       destination: function (req, file, cb) {
-        cb(null, './uploads/'); // Specify the upload directory
+        // Create temp directory if it doesn't exist
+        const tempDir = './temp_uploads';
+        if (!fs.existsSync(tempDir)) {
+          fs.mkdirSync(tempDir, { recursive: true });
+        }
+        cb(null, tempDir);
       },
       filename: function (req, file, cb) {
-        cb(null, Date.now() + '-' + file.originalname); // Append timestamp to filename
+        cb(null, Date.now() + '-' + file.originalname);
       }
     }),
     fileFilter: function (req, file, cb) {
-      // Accept tar files with various compression formats
       if (!file.originalname.match(/\.(tar|tar\.gz|tgz|tar\.bz2)$/i)) {
         return cb(new Error('Only .tar, .tar.gz, .tgz, or .tar.bz2 files are allowed!'));
       }
@@ -28,13 +30,42 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post('/api/upload', upload.single('file'), (req, res) => {
+  app.post('/api/upload', upload.single('file'), async (req, res) => {
     if (!req.file) {
       return res.status(400).send('No file uploaded.');
     }
-    res.status(200).send(`File uploaded successfully: ${req.file.filename}`);
-  });
 
+    const tarFilePath = req.file.path;
+    const projectRoot = process.cwd();
+
+    try {
+      // Extract tar file to project root, replacing existing files
+      await tar.x({
+        file: tarFilePath,
+        cwd: projectRoot,
+        strip: 0, // Adjust this if your tar has a parent directory
+      });
+
+      // Clean up the temporary tar file
+      fs.unlinkSync(tarFilePath);
+
+      res.status(200).json({ 
+        message: 'Backup restored successfully. Files have been extracted and replaced.',
+        filename: req.file.originalname 
+      });
+    } catch (error) {
+      // Clean up on error
+      if (fs.existsSync(tarFilePath)) {
+        fs.unlinkSync(tarFilePath);
+      }
+      
+      console.error('Error extracting tar file:', error);
+      res.status(500).json({ 
+        error: 'Failed to extract backup file',
+        details: error instanceof Error ? error.message : 'Unknown error'
+      });
+    }
+  });
 
   const httpServer = createServer(app);
 

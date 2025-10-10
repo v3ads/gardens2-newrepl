@@ -66,9 +66,13 @@ export default function App() {
         if (xhr.status === 200) {
           setUploadComplete(true);
           toast({
-            title: 'Upload successful',
-            description: 'Your tar file has been uploaded successfully',
+            title: 'Backup restored successfully',
+            description: 'Your project files have been replaced with the backup. The page will reload in 2 seconds.',
           });
+          // Reload the page after 2 seconds to show updated files
+          setTimeout(() => {
+            window.location.reload();
+          }, 2000);
         } else {
           throw new Error('Upload failed');
         }
@@ -100,9 +104,9 @@ export default function App() {
     <div className="min-h-screen bg-background p-8">
       <div className="max-w-4xl mx-auto space-y-6">
         <div>
-          <h1 className="text-3xl font-bold">Tar File Upload</h1>
+          <h1 className="text-3xl font-bold">Backup Restoration</h1>
           <p className="text-muted-foreground mt-2">
-            Upload your backup tar files for extraction and verification
+            Upload a tar backup file to restore and replace your entire project structure
           </p>
         </div>
 
@@ -121,7 +125,7 @@ export default function App() {
             <div className="text-center">
               <p className="text-lg font-medium">
                 {uploadComplete
-                  ? 'Upload Complete'
+                  ? 'Backup Restored'
                   : 'Drag and drop your backup file'}
               </p>
               <p className="text-sm text-muted-foreground mt-1">
