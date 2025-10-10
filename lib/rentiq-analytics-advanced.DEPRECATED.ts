@@ -1,3 +1,18 @@
+/**
+ * ⚠️ DEPRECATED - DO NOT USE ⚠️
+ * 
+ * This file is deprecated and should not be imported anywhere.
+ * 
+ * PROBLEM: Queries analytics_master which has NULL market_rent values due to
+ * case-sensitive field name bug in AppFolio data extraction.
+ * 
+ * SOLUTION: Use lib/rentiq-analytics.ts instead, which queries master_csv_data
+ * table with properly extracted market rent values.
+ * 
+ * This file is kept for historical reference only.
+ * Date deprecated: 2025-10-10
+ */
+
 import { prisma } from './prisma'
 
 export interface RentIQUnit {
