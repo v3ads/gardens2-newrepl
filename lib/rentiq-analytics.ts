@@ -98,7 +98,7 @@ export class RentIQAnalytics {
       // Will be added in future version for enhanced days vacant calculation
       const vacancyMap = new Map()
       
-      const masterData = masterDataRaw.map(mtd => ({
+      const allUnitsData = masterDataRaw.map(mtd => ({
         'Unit': mtd.unitCode,
         'Tenant Status': mtd.isOccupied ? 'Current' : 'Vacant',
         'Monthly Rent': mtd.mrrAmount,
@@ -107,21 +107,31 @@ export class RentIQAnalytics {
         'Days Vacant': csvDataMap.get(mtd.unitCode)?.daysVacant || 0
       }))
 
-      console.log(`[RENTIQ] Found ${masterData.length} units in master tenant data for ${targetDate}`)
+      // Exclude family units from RentIQ calculations (same as occupancy dashboard)
+      const familyUnitNumbers = ['115', '116', '202', '313', '318']
+      const masterData = allUnitsData.filter(unit => !familyUnitNumbers.includes(unit.Unit))
+
+      console.log(`[RENTIQ] Found ${allUnitsData.length} total units, ${masterData.length} regular units (excluded ${familyUnitNumbers.length} family units) for ${targetDate}`)
 
       if (masterData.length === 0) {
         console.warn(`[RENTIQ] No master tenant data found for date: ${targetDate}`)
         throw new Error(`No master tenant data available for ${targetDate}`)
       }
 
-      // Get total unique units from master.csv (the source of truth)
-      const totalUnitsQuery = await prisma.masterCsvData.count()
+      // Get total unique regular units from master.csv (excluding family units)
+      const totalUnitsQuery = await prisma.masterCsvData.count({
+        where: {
+          unit: {
+            notIn: familyUnitNumbers
+          }
+        }
+      })
 
-      // Get occupied units from master tenant data
+      // Get occupied units from master tenant data (regular units only)
       const currentUnits = masterData.filter(row => row['Tenant Status'] === 'Current')
       
-      // Calculate basic occupancy metrics using master.csv as truth
-      const totalUnits = totalUnitsQuery || 182 // Use master.csv count or fallback to 182
+      // Calculate basic occupancy metrics using regular units only (same as occupancy dashboard)
+      const totalUnits = totalUnitsQuery || 177 // Use master.csv count (regular units) or fallback to 177
       const occupiedUnits = currentUnits.length
       const currentOccupancy = (occupiedUnits / totalUnits) * 100
       
