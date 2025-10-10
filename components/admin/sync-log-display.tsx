@@ -177,7 +177,7 @@ export function SyncLogDisplay() {
             <div ref={logsEndRef} />
           </div>
 
-          {status.detailedSync.allSteps.length > 0 && (
+          {status.detailedSync?.allSteps?.length > 0 && (
             <div className="mt-4 grid gap-2">
               <div className="text-sm font-medium mb-2">Step Status:</div>
               {status.detailedSync.allSteps.map((step, index) => (
@@ -250,7 +250,7 @@ export function SyncLogDisplay() {
                 <span className="text-muted-foreground">Records:</span>
                 <span className="font-mono">{status.totalRecords?.toLocaleString() || '0'}</span>
               </div>
-              {status.detailedSync.lastRun && (
+              {status.detailedSync?.lastRun && (
                 <div className="flex justify-between">
                   <span className="text-muted-foreground">Duration:</span>
                   <span className="font-mono">{status.detailedSync.lastRun.duration}</span>
@@ -272,29 +272,29 @@ export function SyncLogDisplay() {
             <div className="space-y-1 text-sm">
               <div className="flex justify-between">
                 <span className="text-muted-foreground">Queued:</span>
-                <span className="font-mono">{status.jobQueueStatus.queuedJobs}</span>
+                <span className="font-mono">{status.jobQueueStatus?.queuedJobs || 0}</span>
               </div>
               <div className="flex justify-between">
                 <span className="text-muted-foreground">Running:</span>
-                <span className="font-mono">{status.jobQueueStatus.runningJobs}</span>
+                <span className="font-mono">{status.jobQueueStatus?.runningJobs || 0}</span>
               </div>
               <div className="flex justify-between">
                 <span className="text-muted-foreground">Completed:</span>
                 <span className="font-mono text-green-600 dark:text-green-400">
-                  {status.jobQueueStatus.completedJobs}
+                  {status.jobQueueStatus?.completedJobs || 0}
                 </span>
               </div>
               <div className="flex justify-between">
                 <span className="text-muted-foreground">Failed:</span>
                 <span className="font-mono text-red-600 dark:text-red-400">
-                  {status.jobQueueStatus.failedJobs}
+                  {status.jobQueueStatus?.failedJobs || 0}
                 </span>
               </div>
             </div>
           </div>
         </div>
 
-        {status.jobQueueStatus.recentJobs.length > 0 && (
+        {status.jobQueueStatus?.recentJobs?.length > 0 && (
           <div className="space-y-2">
             <h3 className="text-sm font-medium">Recent Jobs</h3>
             <div className="space-y-2">
@@ -338,7 +338,7 @@ export function SyncLogDisplay() {
           </div>
         )}
 
-        {status.detailedSync.lastRun && status.detailedSync.allSteps.length > 0 && (
+        {status.detailedSync?.lastRun && status.detailedSync?.allSteps?.length > 0 && (
           <div className="space-y-2">
             <h3 className="text-sm font-medium">Last Sync Steps</h3>
             <div className="grid gap-2">
