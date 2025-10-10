@@ -43,9 +43,12 @@ export async function POST(request: NextRequest) {
       }, { status: 400 })
     }
 
+    // Convert date string to Date object for Prisma
+    const dateObj = new Date(date)
+    
     // Check if data exists
     const count = await prisma.analyticsMaster.count({
-      where: { snapshotDate: date }
+      where: { snapshotDate: dateObj }
     })
 
     if (count === 0) {
@@ -59,12 +62,12 @@ export async function POST(request: NextRequest) {
 
     // Delete the zombie data
     const result = await prisma.analyticsMaster.deleteMany({
-      where: { snapshotDate: date }
+      where: { snapshotDate: dateObj }
     })
 
     // Also clean up sync status
     await prisma.dailySyncStatus.updateMany({
-      where: { lastSyncDate: date },
+      where: { lastSyncDate: dateObj },
       data: {
         lastSyncSuccess: false,
         errorMessage: `Zombie data cleaned (${result.count} records removed) - ready for fresh sync`,
