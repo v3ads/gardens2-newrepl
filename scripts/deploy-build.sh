@@ -16,7 +16,7 @@ export NO_UPM=1
 # Configure npm to use /tmp for everything to avoid quota issues
 echo "⚙️ Configuring npm to use /tmp directory..."
 export npm_config_cache=/tmp/npm-cache-$$
-export npm_config_tmp=/tmp/npm-tmp-$$
+export TMPDIR=/tmp/npm-tmp-$$
 export npm_config_prefix=/tmp/npm-global-$$
 export npm_config_userconfig=/tmp/.npmrc
 export npm_config_globalconfig=/tmp/.npmrc
@@ -24,7 +24,7 @@ export npm_config_store=/tmp/npm-store-$$
 export NPM_CONFIG_LOGLEVEL=error
 
 # Create necessary temp directories
-mkdir -p $npm_config_cache $npm_config_tmp $npm_config_prefix
+mkdir -p $npm_config_cache $TMPDIR $npm_config_prefix
 
 # Maximum cleanup before starting
 echo "🧹 Maximum cleanup to free all available space..."
@@ -81,7 +81,7 @@ NODE_OPTIONS='--max-old-space-size=3072' npm run build
 
 # Aggressive post-build cleanup
 echo "🧹 Post-build cleanup..."
-rm -rf $npm_config_cache $npm_config_tmp $npm_config_prefix 2>/dev/null || true
+rm -rf $npm_config_cache $TMPDIR $npm_config_prefix 2>/dev/null || true
 rm -rf /tmp/npm-* /tmp/.npm* 2>/dev/null || true
 rm -rf .next/cache 2>/dev/null || true
 find . -name "*.map" -delete 2>/dev/null || true

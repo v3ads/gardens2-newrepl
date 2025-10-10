@@ -47,5 +47,5 @@ externalPort = 80
 
 [deployment]
 deploymentTarget = "vm"
-build = ["bash", "-c", "npm install --production && npx prisma generate && npm run build"]
+build = ["bash", "scripts/deploy-build.sh"]
 run = ["bash", "scripts/start-production.sh"]
