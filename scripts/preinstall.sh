@@ -6,10 +6,12 @@ echo "🔧 Preinstall: Setting up npm to use /tmp directory..."
 # Create temp directories for npm
 mkdir -p /tmp/npm-cache /tmp/npm-tmp /tmp/npm-global
 
-# Configure npm to use /tmp
+# Configure npm to use /tmp (removed invalid 'tmp' option)
 npm config set cache /tmp/npm-cache
-npm config set tmp /tmp/npm-tmp  
 npm config set prefix /tmp/npm-global
+
+# Set tmp directory via environment variable instead
+export TMPDIR=/tmp/npm-tmp
 
 # Disable UPM
 export UPM_DISABLE=1
