@@ -47,6 +47,7 @@ next-env.d.ts
 # Logs and debug files
 build.log
 debug_status.js
+/logs/
 
 # Temporary files
 /attached_assets/

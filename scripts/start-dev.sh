@@ -14,8 +14,8 @@ echo "📍 Working directory: $(pwd)"
 echo "🔓 Auto-login enabled for vipaymanshalaby@gmail.com"
 echo "🕐 Started at: $(date)"
 
-# Create logs directory
-mkdir -p /tmp/logs
+# Create persistent logs directory (survives deployments)
+mkdir -p logs
 
 # Clean up any corrupted build artifacts for dev mode
 echo "🧹 Cleaning corrupted build artifacts..."
@@ -44,7 +44,7 @@ trap cleanup SIGTERM SIGINT SIGHUP
 
 # Start background worker in development mode (connects to development database)
 echo "🎯 Starting background worker..."
-NODE_ENV=development npx tsx worker/sync-worker.ts > /tmp/logs/worker.log 2>&1 &
+NODE_ENV=development npx tsx worker/sync-worker.ts >> logs/worker.log 2>&1 &
 WORKER_PID=$!
 echo "✅ Background worker started (PID: $WORKER_PID)"
 
@@ -53,7 +53,7 @@ sleep 2
 
 # Start Next.js application in development mode with auto-login
 echo "🌐 Starting Next.js application..."
-NEXT_DIST_DIR=.next-dev npm run dev:raw > /tmp/logs/nextjs.log 2>&1 &
+NEXT_DIST_DIR=.next-dev npm run dev:raw >> logs/nextjs.log 2>&1 &
 NEXTJS_PID=$!
 echo "✅ Next.js application started (PID: $NEXTJS_PID)"
 
@@ -75,7 +75,7 @@ while true; do
     # Check if both processes are still running
     if ! kill -0 $WORKER_PID 2>/dev/null; then
         echo "❌ Background worker died, restarting..."
-        NODE_ENV=development npx tsx worker/sync-worker.ts > /tmp/logs/worker.log 2>&1 &
+        NODE_ENV=development npx tsx worker/sync-worker.ts >> logs/worker.log 2>&1 &
         WORKER_PID=$!
         echo "🔄 Worker restarted (PID: $WORKER_PID)"
     fi
@@ -84,10 +84,10 @@ while true; do
         echo "❌ Next.js application died (PID: $NEXTJS_PID)"
         
         # FAIL-FAST: Check for TypeScript compilation errors immediately on FIRST crash
-        if tail -100 /tmp/logs/nextjs.log 2>/dev/null | grep -q "Type error:"; then
+        if tail -100 logs/nextjs.log 2>/dev/null | grep -q "Type error:"; then
             echo "🚨 FATAL: TypeScript compilation errors detected"
             echo "📋 Compilation errors:"
-            tail -100 /tmp/logs/nextjs.log | grep -A 5 "Type error:" | head -20
+            tail -100 logs/nextjs.log | grep -A 5 "Type error:" | head -20
             echo ""
             echo "💡 Fix the TypeScript errors above and restart the server"
             echo "🛑 Exiting immediately to prevent crash loop"
@@ -95,10 +95,10 @@ while true; do
         fi
         
         # FAIL-FAST: Check for persistent MODULE_NOT_FOUND errors immediately on FIRST crash
-        if tail -100 /tmp/logs/nextjs.log 2>/dev/null | grep -q "MODULE_NOT_FOUND"; then
+        if tail -100 logs/nextjs.log 2>/dev/null | grep -q "MODULE_NOT_FOUND"; then
             echo "🚨 FATAL: Module loading errors detected (corrupted build cache)"
             echo "📋 Module errors:"
-            tail -100 /tmp/logs/nextjs.log | grep -A 3 "MODULE_NOT_FOUND" | head -20
+            tail -100 logs/nextjs.log | grep -A 3 "MODULE_NOT_FOUND" | head -20
             echo ""
             echo "💡 Run: rm -rf .next .next-dev && npm run dev"
             echo "🛑 Exiting immediately to prevent crash loop"
@@ -149,7 +149,7 @@ while true; do
         
         # Restart Next.js
         echo "🔄 Restarting Next.js..."
-        NEXT_DIST_DIR=.next-dev npm run dev:raw > /tmp/logs/nextjs.log 2>&1 &
+        NEXT_DIST_DIR=.next-dev npm run dev:raw >> logs/nextjs.log 2>&1 &
         NEXTJS_PID=$!
         echo "✅ Next.js restarted (PID: $NEXTJS_PID)"
         

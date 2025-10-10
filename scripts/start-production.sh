@@ -11,8 +11,8 @@ echo "📊 Environment: production"
 echo "📍 Working directory: $(pwd)"
 echo "🕐 Started at: $(date)"
 
-# Create logs directory
-mkdir -p /tmp/logs
+# Production logs to stdout (captured by Replit Publishing)
+# No need to create log files - Replit handles this automatically
 
 # Run database migrations
 echo "🔄 Running Prisma migrations..."
