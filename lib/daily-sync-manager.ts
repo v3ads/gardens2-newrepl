@@ -231,11 +231,18 @@ export class DailySyncManager {
         `
       )
       
-      // Add cancel_requested column if table already exists without it
+      // Add missing columns if table already exists without them
       await withPrismaRetry(() => 
         prisma.$executeRaw`
           ALTER TABLE sync_locks 
           ADD COLUMN IF NOT EXISTS cancel_requested BOOLEAN NOT NULL DEFAULT FALSE
+        `
+      )
+      
+      await withPrismaRetry(() => 
+        prisma.$executeRaw`
+          ALTER TABLE sync_locks 
+          ADD COLUMN IF NOT EXISTS total_steps INTEGER
         `
       )
       
