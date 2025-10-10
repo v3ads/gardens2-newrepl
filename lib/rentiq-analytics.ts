@@ -60,16 +60,35 @@ export class RentIQAnalytics {
       
       console.log(`[RENTIQ] Calculating RentIQ for date: ${targetDate}`)
       
+      // TIMEZONE FIX: Use date range query to handle timezone offsets in database
+      // Eastern date "2025-10-10" may be stored as 2025-10-10T04:00:00.000Z in DB
+      const startOfDay = new Date(`${targetDate}T00:00:00.000Z`)
+      const endOfDay = new Date(`${targetDate}T23:59:59.999Z`)
+      
       // Get master CSV data with actual unit type information from master.csv (unique units only)
-      const masterDataRaw = await prisma.masterTenantData.findMany({
+      let masterDataRaw = await prisma.masterTenantData.findMany({
         where: {
-          snapshotDate: new Date(targetDate)
+          snapshotDate: {
+            gte: startOfDay,
+            lte: endOfDay
+          }
         },
         // We'll join manually since Prisma doesn't have the relation set up
         orderBy: {
           unitCode: 'asc'
         }
       })
+      
+      // FALLBACK: If no data found for exact date, use latest available snapshot
+      if (masterDataRaw.length === 0) {
+        console.warn(`[RENTIQ] No data found for ${targetDate}, using latest snapshot`)
+        masterDataRaw = await prisma.masterTenantData.findMany({
+          orderBy: {
+            snapshotDate: 'desc'
+          },
+          take: 182 // Get latest snapshot (all units)
+        })
+      }
 
       // Join with master CSV data manually
       const masterCsvData = await prisma.masterCsvData.findMany()

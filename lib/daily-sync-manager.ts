@@ -1476,13 +1476,13 @@ export class DailySyncManager {
         return
       }
       
-      const { rentiqAdvancedAnalytics } = await import('./rentiq-analytics-advanced')
+      const { RentIQAnalytics } = await import('./rentiq-analytics')
       
       // EASTERN TIMEZONE NORMALIZATION: RentIQ calculations always use Eastern time
       const { EasternTimeManager } = await import('./timezone-utils')
       const currentDate = EasternTimeManager.getCurrentEasternDate()
       EasternTimeManager.logSyncOperation('RentIQ calculation', { date: currentDate })
-      const results = await rentiqAdvancedAnalytics.calculateRentIQ(currentDate)
+      const results = await RentIQAnalytics.getInstance().calculateRentIQ(currentDate)
       
       console.log(`[DAILY_SYNC] ✅ RentIQ calculated: ${results.rentiq_pool_count} units in pool, active: ${results.rentiq_active}`)
       
