@@ -362,14 +362,14 @@ Daily Auto-Sync completed at ${new Date().toLocaleString('en-US', { timeZone: 'A
           return null
         }
         
-        // Compute analytics using same logic as dashboard
+        // CRITICAL: Match UnifiedAnalytics/RentIQ logic - anything NOT 'Vacant' is occupied
+        // This includes 'Current', 'Notice', 'Notice Unrented', 'Future', etc.
         const totalUnits = csvData.length
-        const occupiedUnits = csvData.filter(row => 
-          row.tenantStatus?.toLowerCase() === 'current' || 
-          row.tenantStatus?.toLowerCase() === 'notice'
-        )
         const vacantUnits = csvData.filter(row => 
           row.tenantStatus?.toLowerCase() === 'vacant'
+        )
+        const occupiedUnits = csvData.filter(row => 
+          row.tenantStatus?.toLowerCase() !== 'vacant'
         )
         
         // Calculate financial metrics
