@@ -119,30 +119,73 @@ export class RentIQAnalytics {
       // Get total unique units from master.csv (all units including family units)
       const totalUnitsQuery = await prisma.masterCsvData.count()
 
-      // CRITICAL: Match UnifiedAnalytics logic - anything NOT 'Vacant' is considered occupied
-      // This includes 'Current', 'Notice', 'Notice Unrented', 'Future', etc.
-      const occupiedUnits = masterData.filter(row => row['Tenant Status'] !== 'Vacant')
+      // V18.3.0 SMART VACANCY DEDUPLICATION:
+      // Group by unit to handle units with multiple status rows (e.g., Vacant + Future)
+      const unitStatusMap = new Map<string, string[]>()
+      for (const row of masterData) {
+        const unit = row['Unit']
+        if (!unitStatusMap.has(unit)) {
+          unitStatusMap.set(unit, [])
+        }
+        unitStatusMap.get(unit)!.push(row['Tenant Status'])
+      }
+      
+      // Check feature flag for smart vacancy deduplication
+      const useSmartDedup = process.env.USE_SMART_VACANCY_DEDUPLICATION !== 'false'
+      console.log(`[RENTIQ] Vacancy mode: ${useSmartDedup ? 'SMART deduplication (v18.3.0)' : 'LEGACY row-based'}`)
+      
+      // Identify truly vacant units (excluding units with Future/Notice tenants)
+      const excludedUnits: string[] = []
+      const trulyVacantUnits: string[] = []
+      
+      for (const [unit, statuses] of unitStatusMap) {
+        const uniqueStatuses = [...new Set(statuses)]
+        const hasVacant = uniqueStatuses.some(s => s === 'Vacant')
+        const hasNonVacant = uniqueStatuses.some(s => s !== 'Vacant' && s !== '')
+        
+        if (hasVacant && !hasNonVacant) {
+          // Unit is ONLY vacant (no other statuses)
+          trulyVacantUnits.push(unit)
+        } else if (hasVacant && hasNonVacant && useSmartDedup) {
+          // Unit has both Vacant and non-vacant rows - exclude from vacant count
+          excludedUnits.push(unit)
+          console.log(`[RENTIQ] 📋 Excluding ${unit} from vacant count (statuses: ${uniqueStatuses.join(', ')})`)
+        }
+      }
+      
+      // Filter masterData to get only truly vacant unit rows
+      const vacantUnits = useSmartDedup 
+        ? masterData.filter(row => trulyVacantUnits.includes(row['Unit']))
+        : masterData.filter(row => row['Tenant Status'] === 'Vacant')
+      
+      // CRITICAL: Match UnifiedAnalytics logic - anything NOT truly vacant is considered occupied
+      const occupiedUnits = masterData.filter(row => {
+        if (useSmartDedup) {
+          return !trulyVacantUnits.includes(row['Unit'])
+        }
+        return row['Tenant Status'] !== 'Vacant'
+      })
       
       // Calculate basic occupancy metrics using all 182 units (family units are always occupied)
       const totalUnits = totalUnitsQuery || 182 // Use master.csv count or fallback to 182
-      const currentOccupancy = (occupiedUnits.length / totalUnits) * 100
+      const uniqueOccupiedUnits = [...new Set(occupiedUnits.map(r => r['Unit']))].length
+      const currentOccupancy = (uniqueOccupiedUnits / totalUnits) * 100
       
       // Target is 95% occupancy
       const targetOccupancy = 95
       const targetOccupiedUnits = Math.ceil((targetOccupancy / 100) * totalUnits) // 173 units
       const allowedVacantUnits = totalUnits - targetOccupiedUnits // 9 units
       
-      // Find vacant units (only units with status 'Vacant')
-      const vacantUnits = masterData.filter(row => row['Tenant Status'] === 'Vacant')
+      console.log(`[RENTIQ] Vacancy breakdown: ${trulyVacantUnits.length} truly vacant (${excludedUnits.length} excluded with Future/Notice)`)
       
       // Calculate RentIQ Pool: vacant units minus allowed vacant units (9)
-      const rentiqPoolCount = Math.max(0, vacantUnits.length - allowedVacantUnits)
-      const unitsNeededFor95 = Math.max(0, targetOccupiedUnits - occupiedUnits.length)
+      const rentiqPoolCount = Math.max(0, trulyVacantUnits.length - allowedVacantUnits)
+      const unitsNeededFor95 = Math.max(0, targetOccupiedUnits - uniqueOccupiedUnits)
       
       // RentIQ is active if pool count > 0
       const rentiqActive = rentiqPoolCount > 0
       
-      console.log(`[RENTIQ] Occupancy: ${occupiedUnits.length}/${totalUnits} (${currentOccupancy.toFixed(1)}%), Vacant: ${vacantUnits.length}, Pool: ${rentiqPoolCount}`)
+      console.log(`[RENTIQ] Occupancy: ${uniqueOccupiedUnits}/${totalUnits} (${currentOccupancy.toFixed(1)}%), Vacant: ${trulyVacantUnits.length}, Pool: ${rentiqPoolCount}`)
 
       // Calculate pricing for RentIQ pool units
       const rentiqUnits: RentIQUnit[] = []
@@ -194,7 +237,7 @@ export class RentIQAnalytics {
         date: targetDate!,
         current_occupancy: Math.round(currentOccupancy * 100) / 100,
         total_units: totalUnits,
-        occupied_units: occupiedUnits.length,
+        occupied_units: uniqueOccupiedUnits,
         target_occupancy: targetOccupancy,
         target_occupied_units: targetOccupiedUnits,
         rentiq_pool_count: rentiqPoolCount,
