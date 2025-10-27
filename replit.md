@@ -4,9 +4,10 @@ Cynthia Gardens Command Center is a modern property management application built
 
 ## Current Version
 
-**v18.2.0** (Released: 2025-10-17)
+**v18.3.0** (Released: 2025-10-27)
 
 ### Recent Changes
+- **v18.3.0** (2025-10-27): Implemented smart vacancy deduplication to match external AI counting (37 vs 40 vacant units). Root cause: Units with BOTH "Vacant" AND "Future"/"Notice" status rows were incorrectly counted as vacant. New logic: Units are vacant ONLY if ALL rows show "Vacant" status with NO other statuses. Units 312, 510, 608 (which have Future/Notice tenants) are now correctly excluded from vacant count. Feature flag: `USE_SMART_VACANCY_DEDUPLICATION=false` reverts to legacy row-based counting. Updated: UnifiedAnalytics, RentIQ, email service (via UnifiedAnalytics).
 - **v18.2.0** (2025-10-17): Fixed critical email service bug causing "Limited Data Available" in daily emails. Root cause: `getCurrentCSVAnalytics()` used outdated occupancy logic (only counting 'Current'/'Notice' as occupied) instead of matching UnifiedAnalytics/RentIQ logic (anything NOT 'Vacant' = occupied). This caused validation failures (occupied + vacant ≠ total) triggering fallback to hardcoded defaults. Email service now uses consistent occupancy calculation across all systems.
 - **v18.1.0** (2025-10-10): Fixed RentIQ occupancy calculation to match UnifiedAnalytics. Root cause: Unit 816 has status "Notice" (not "Current" or "Vacant"). RentIQ was only counting "Current" as occupied, while UnifiedAnalytics correctly counts anything NOT "Vacant" as occupied (including 'Notice', 'Future', etc.). Both systems now show: 140 occupied, 42 vacant, 76.92% occupancy, 33-unit RentIQ pool.
 - **v18.0.0** (2025-10-10): Fixed RentIQ unit ordering and count logic. (1) Implemented proper sort order: units now ordered by HIGHEST vacancy days first (descending) for progressive discount prioritization. (2) Corrected total unit count: RentIQ now operates on all 182 units (family units 115, 116, 202, 313, 318 are always occupied and count toward total).
