@@ -229,7 +229,9 @@ export class MasterCsvRepository {
   }
 
   /**
-   * PERFORMANCE IMPROVEMENT: Incremental upsert for CSV data instead of delete+rebuild
+   * V18.3.0: Insert all CSV records (supports multiple status rows per unit)
+   * Changed from upsert to insert-only to allow duplicate unit numbers with different statuses
+   * (e.g., Unit 312 can have both "Vacant" and "Future" status rows)
    */
   static async upsertMany(records: Array<{
     unit: string
@@ -255,9 +257,14 @@ export class MasterCsvRepository {
     nextRentIncrease: string
     lastRentIncrease: string
   }>): Promise<{ count: number }> {
-    console.log(`[MASTER_CSV_REPO] Upserting ${records.length} CSV records (incremental mode)`)
+    console.log(`[MASTER_CSV_REPO] Inserting ${records.length} CSV records (allows duplicate units with different statuses)`)
     
-    let totalUpserted = 0
+    // V18.3.0: Clear existing data first (full rebuild approach)
+    // This ensures we always have fresh data matching the Google Sheet exactly
+    await withPrismaRetry(() => prisma.masterCsvData.deleteMany())
+    console.log('[MASTER_CSV_REPO] Cleared existing CSV data')
+    
+    let totalInserted = 0
     const BATCH_SIZE = 200
     
     for (let i = 0; i < records.length; i += BATCH_SIZE) {
@@ -269,48 +276,24 @@ export class MasterCsvRepository {
           const daysVacant = (record as any).daysVacant || 0
           const { EasternTimeManager } = await import('./timezone-utils')
           const syncDate = EasternTimeManager.getCurrentEasternDate()
+          
+          // V18.3.0: Simple INSERT (no ON CONFLICT) to allow duplicate unit numbers
           await withPrismaRetry(() => prisma.$executeRaw`
             INSERT INTO master_csv_data ("id", "unit", "firstName", "lastName", "fullName", "phoneNumber", "email", "leaseStartDate", "leaseEndDate", "moveInDate", "monthlyRent", "marketRent", "daysVacant", "securityDeposit", "tenantStatus", "tenantType", "primaryTenant", "squareFeet", "unitType", "unitCategory", "leasingAgent", "nextRentIncrease", "lastRentIncrease", "syncDate", "createdAt", "updatedAt")
             VALUES (${recordId}, ${record.unit}, ${record.firstName}, ${record.lastName}, ${record.fullName}, ${record.phoneNumber}, ${record.email}, ${record.leaseStartDate}, ${record.leaseEndDate}, ${record.moveInDate}, ${record.monthlyRent}, ${record.marketRent}, ${daysVacant}, ${record.securityDeposit}, ${record.tenantStatus}, ${record.tenantType}, ${record.primaryTenant}, ${record.squareFeet}, ${record.unitType}, ${record.unitCategory}, ${record.leasingAgent}, ${record.nextRentIncrease}, ${record.lastRentIncrease}, ${syncDate}, ${new Date()}, ${new Date()})
-            ON CONFLICT ("unit")
-            DO UPDATE SET
-              "firstName" = EXCLUDED."firstName",
-              "lastName" = EXCLUDED."lastName", 
-              "fullName" = EXCLUDED."fullName",
-              "phoneNumber" = EXCLUDED."phoneNumber",
-              "email" = EXCLUDED."email",
-              "leaseStartDate" = EXCLUDED."leaseStartDate",
-              "leaseEndDate" = EXCLUDED."leaseEndDate",
-              "moveInDate" = EXCLUDED."moveInDate",
-              "monthlyRent" = EXCLUDED."monthlyRent",
-              "marketRent" = EXCLUDED."marketRent",
-              "daysVacant" = EXCLUDED."daysVacant",
-              "securityDeposit" = EXCLUDED."securityDeposit",
-              "tenantStatus" = EXCLUDED."tenantStatus",
-              "tenantType" = EXCLUDED."tenantType",
-              "primaryTenant" = EXCLUDED."primaryTenant",
-              "squareFeet" = EXCLUDED."squareFeet",
-              "unitType" = EXCLUDED."unitType",
-              "unitCategory" = EXCLUDED."unitCategory",
-              "leasingAgent" = EXCLUDED."leasingAgent",
-              "nextRentIncrease" = EXCLUDED."nextRentIncrease",
-              "lastRentIncrease" = EXCLUDED."lastRentIncrease",
-              "syncDate" = EXCLUDED."syncDate",
-              "updatedAt" = EXCLUDED."updatedAt"
           `)
-          totalUpserted++
+          totalInserted++
         } catch (error) {
-          console.error(`[MASTER_CSV_REPO] CRITICAL: Failed to upsert unit ${record.unit}:`, error)
-          // Don't silently ignore upsert failures - they indicate real problems
-          throw new Error(`Master CSV upsert failed for unit ${record.unit}: ${error instanceof Error ? error.message : String(error)}`)
+          console.error(`[MASTER_CSV_REPO] CRITICAL: Failed to insert unit ${record.unit}:`, error)
+          throw new Error(`Master CSV insert failed for unit ${record.unit}: ${error instanceof Error ? error.message : String(error)}`)
         }
       }
       
-      console.log(`[MASTER_CSV_REPO] Upserted batch ${Math.floor(i/BATCH_SIZE) + 1}/${Math.ceil(records.length/BATCH_SIZE)}: ${batch.length} records`)
+      console.log(`[MASTER_CSV_REPO] Inserted batch ${Math.floor(i/BATCH_SIZE) + 1}/${Math.ceil(records.length/BATCH_SIZE)}: ${batch.length} records`)
     }
     
-    console.log(`[MASTER_CSV_REPO] ✅ Upserted ${totalUpserted} CSV records (incremental)`)
-    return { count: totalUpserted }
+    console.log(`[MASTER_CSV_REPO] ✅ Inserted ${totalInserted} CSV records (full rebuild with duplicate support)`)
+    return { count: totalInserted }
   }
 }
 
