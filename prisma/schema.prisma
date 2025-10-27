@@ -262,7 +262,7 @@ model MasterTenantData {
 
 model MasterCsvData {
   id               String   @id @default(cuid())
-  unit             String   @unique
+  unit             String
   firstName        String?
   lastName         String?
   fullName         String?
