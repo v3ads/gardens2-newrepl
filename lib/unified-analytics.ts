@@ -176,11 +176,11 @@ export class UnifiedAnalytics {
   
   /**
    * Get units data from master CSV with standardized format
-   * CRITICAL: Deduplicate by unit code since CSV has multiple rows per unit (roommates/couples)
-   * 
-   * V18.3.0 SMART VACANCY LOGIC:
-   * - Units with BOTH "Vacant" AND "Future"/"Notice" statuses are NOT vacant (lease signed)
-   * - Only units that are EXCLUSIVELY "Vacant" (all rows) count as vacant
+   * V18.3.0 SMART ROW SELECTION:
+   * - CSV can have multiple rows per unit (status transitions: Vacant → Future)
+   * - Select row with highest priority status (NOT roommate model, NO rent summing)
+   * - Priority: Future/Notice/Current > Vacant (active leases trump vacant status)
+   * - Unit is vacant ONLY if ALL rows show "Vacant" status
    * - Feature flag: USE_SMART_VACANCY_DEDUPLICATION (default: true)
    */
   private static async getUnitsFromMasterCSV(): Promise<UnitData[]> {
@@ -194,7 +194,8 @@ export class UnifiedAnalytics {
           marketRent: true,
           unitType: true,
           unitCategory: true,
-          tenantType: true
+          tenantType: true,
+          daysVacant: true
         }
       })
       
@@ -203,7 +204,7 @@ export class UnifiedAnalytics {
         return []
       }
       
-      // Group by unit code to handle multiple tenants per unit
+      // Group by unit code to handle multiple status rows per unit
       const unitGroups = new Map<string, typeof masterData>()
       for (const record of masterData) {
         if (!unitGroups.has(record.unit)) {
@@ -214,50 +215,67 @@ export class UnifiedAnalytics {
       
       // Check feature flag for smart vacancy deduplication (v18.3.0)
       const useSmartDedup = process.env.USE_SMART_VACANCY_DEDUPLICATION !== 'false'
-      console.log(`[UNIFIED_ANALYTICS] Vacancy mode: ${useSmartDedup ? 'SMART deduplication (v18.3.0)' : 'LEGACY row-based'}`)
+      console.log(`[UNIFIED_ANALYTICS] Vacancy mode: ${useSmartDedup ? 'SMART row selection (v18.3.0)' : 'LEGACY row-based'}`)
+      
+      // Define status priority: higher priority = more important status
+      const getStatusPriority = (status: string | null | undefined): number => {
+        const s = (status || '').toLowerCase()
+        if (s === 'future') return 4  // Highest priority: signed lease, future move-in
+        if (s === 'notice') return 3  // Tenant leaving, but still current
+        if (s === 'current') return 2 // Active tenant
+        if (s === 'vacant') return 1  // Lowest priority
+        return 0 // Unknown status
+      }
       
       // Track excluded units for transparency
-      const excludedFromVacant: Array<{ unit: string; statuses: string[] }> = []
+      const excludedFromVacant: Array<{ unit: string; statuses: string[]; selectedStatus: string }> = []
       
-      // Convert to standardized format with proper unit-level deduplication
+      // Convert to standardized format with smart row selection
       const units: UnitData[] = Array.from(unitGroups.entries()).map(([unitCode, records]) => {
         const uniqueStatuses = [...new Set(records.map(r => r.tenantStatus || ''))]
         const hasVacant = uniqueStatuses.some(s => s.toLowerCase() === 'vacant')
         const hasNonVacant = uniqueStatuses.some(s => s.toLowerCase() !== 'vacant' && s !== '')
         
-        // SMART VACANCY LOGIC (v18.3.0):
-        // Unit is vacant ONLY if ALL rows show "Vacant" and NO rows show Future/Notice/Current
-        // If unit has BOTH "Vacant" AND other statuses, it's NOT vacant (lease signed)
+        // SMART ROW SELECTION (v18.3.0):
+        // Select the row with highest priority status (e.g., Future > Vacant)
+        // This prevents double-counting rent and correctly represents unit state
+        const selectedRecord = records.reduce((best, current) => {
+          const bestPriority = getStatusPriority(best.tenantStatus)
+          const currentPriority = getStatusPriority(current.tenantStatus)
+          return currentPriority > bestPriority ? current : best
+        })
+        
+        // Unit is vacant ONLY if ALL rows show "Vacant" (no active/future leases)
         const isVacant = hasVacant && !hasNonVacant
         
+        // Track units excluded from vacant count
         if (hasVacant && hasNonVacant && useSmartDedup) {
-          excludedFromVacant.push({ unit: unitCode, statuses: uniqueStatuses })
+          excludedFromVacant.push({ 
+            unit: unitCode, 
+            statuses: uniqueStatuses,
+            selectedStatus: selectedRecord.tenantStatus || 'Unknown'
+          })
         }
-        
-        // Use first record for unit metadata, but sum financial data
-        const firstRecord = records[0]
-        const totalMonthlyRent = records.reduce((sum, r) => sum + (r.monthlyRent || 0), 0)
-        const marketRent = firstRecord.marketRent || 0 // Market rent is per unit, not per tenant
         
         return {
           unit: unitCode,
-          // STANDARD VACANCY DEFINITION: status "Vacant" = vacant, everything else = occupied
           isVacant,
-          tenantStatus: isVacant ? 'Vacant' : (firstRecord.tenantStatus || ''),
-          monthlyRent: totalMonthlyRent,
-          marketRent,
+          tenantStatus: selectedRecord.tenantStatus || '',
+          // CRITICAL: Use selected row's rent ONLY (no summing to prevent double-counting)
+          monthlyRent: selectedRecord.monthlyRent || 0,
+          marketRent: selectedRecord.marketRent || 0,
           // Family units are specific unit numbers: 115, 116, 202, 313, 318
           isFamily: ['115', '116', '202', '313', '318'].includes(unitCode),
           // Add tenant type for student/non-student breakdown
-          tenantType: firstRecord.tenantType || ''
+          tenantType: selectedRecord.tenantType || ''
         }
       })
       
       // Log excluded units for transparency
       if (excludedFromVacant.length > 0 && useSmartDedup) {
         console.log(`[UNIFIED_ANALYTICS] 📋 Excluded ${excludedFromVacant.length} units from vacant count (have Future/Notice tenants):`)
-        excludedFromVacant.forEach(({ unit, statuses }) => {
-          console.log(`  - ${unit}: ${statuses.join(', ')}`)
+        excludedFromVacant.forEach(({ unit, statuses, selectedStatus }) => {
+          console.log(`  - ${unit}: [${statuses.join(', ')}] → Using: ${selectedStatus}`)
         })
       }
       
