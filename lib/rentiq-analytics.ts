@@ -90,21 +90,45 @@ export class RentIQAnalytics {
         })
       }
 
-      // Join with master CSV data manually
+      // V18.3.0: Use smart row selection to join CSV data (handles duplicate unit statuses)
       const masterCsvData = await prisma.masterCsvData.findMany()
-      const csvDataMap = new Map(masterCsvData.map(d => [d.unit, d]))
       
-      // Note: Vacancy tracking not yet implemented in PostgreSQL schema
-      // Will be added in future version for enhanced days vacant calculation
-      const vacancyMap = new Map()
+      // Group CSV rows by unit (may have multiple rows per unit: Vacant + Future)
+      const csvUnitGroups = new Map<string, typeof masterCsvData>()
+      for (const row of masterCsvData) {
+        if (!csvUnitGroups.has(row.unit)) {
+          csvUnitGroups.set(row.unit, [])
+        }
+        csvUnitGroups.get(row.unit)!.push(row)
+      }
+      
+      // Status priority: Future/Notice/Current > Vacant (match UnifiedAnalytics)
+      const getStatusPriority = (status: string | null | undefined): number => {
+        const s = (status || '').toLowerCase()
+        if (s === 'future') return 4
+        if (s === 'notice') return 3
+        if (s === 'current') return 2
+        if (s === 'vacant') return 1
+        return 0
+      }
+      
+      // Select best row per unit (highest priority status)
+      const csvDataMap = new Map<string, typeof masterCsvData[0]>()
+      for (const [unit, rows] of csvUnitGroups) {
+        const selectedRow = rows.reduce((best, current) => {
+          const bestPriority = getStatusPriority(best.tenantStatus)
+          const currentPriority = getStatusPriority(current.tenantStatus)
+          return currentPriority > bestPriority ? current : best
+        })
+        csvDataMap.set(unit, selectedRow)
+      }
       
       const masterData = masterDataRaw.map(mtd => ({
         'Unit': mtd.unitCode,
-        // CRITICAL: Use actual tenant status from CSV to match UnifiedAnalytics logic
-        // Statuses: 'Current', 'Vacant', 'Notice', 'Notice Unrented', 'Future', etc.
+        // Use smart-selected CSV row (highest priority status: Future > Notice > Current > Vacant)
         'Tenant Status': csvDataMap.get(mtd.unitCode)?.tenantStatus || (mtd.isOccupied ? 'Current' : 'Vacant'),
         'Monthly Rent': mtd.mrrAmount,
-        'Market Rent': csvDataMap.get(mtd.unitCode)?.marketRent || mtd.marketRent, // Use CSV market rent (correct) over masterTenantData (NULL)
+        'Market Rent': csvDataMap.get(mtd.unitCode)?.marketRent || mtd.marketRent,
         'Unit Type': csvDataMap.get(mtd.unitCode)?.unitType || null,
         'Days Vacant': csvDataMap.get(mtd.unitCode)?.daysVacant || 0
       }))
