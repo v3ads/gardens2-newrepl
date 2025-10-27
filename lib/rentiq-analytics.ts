@@ -141,7 +141,8 @@ export class RentIQAnalytics {
       }
 
       // Get total unique units from master.csv (all units including family units)
-      const totalUnitsQuery = await prisma.masterCsvData.count()
+      // V18.3.0: Count DISTINCT units, not total rows (which includes duplicate statuses)
+      const totalUnits = csvUnitGroups.size || 182 // 182 unique units (fallback for safety)
 
       // V18.3.0 SMART VACANCY DEDUPLICATION:
       // Group by unit to handle units with multiple status rows (e.g., Vacant + Future)
@@ -191,7 +192,6 @@ export class RentIQAnalytics {
       })
       
       // Calculate basic occupancy metrics using all 182 units (family units are always occupied)
-      const totalUnits = totalUnitsQuery || 182 // Use master.csv count or fallback to 182
       const uniqueOccupiedUnits = [...new Set(occupiedUnits.map(r => r['Unit']))].length
       const currentOccupancy = (uniqueOccupiedUnits / totalUnits) * 100
       
