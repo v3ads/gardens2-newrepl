@@ -177,6 +177,11 @@ export class UnifiedAnalytics {
   /**
    * Get units data from master CSV with standardized format
    * CRITICAL: Deduplicate by unit code since CSV has multiple rows per unit (roommates/couples)
+   * 
+   * V18.3.0 SMART VACANCY LOGIC:
+   * - Units with BOTH "Vacant" AND "Future"/"Notice" statuses are NOT vacant (lease signed)
+   * - Only units that are EXCLUSIVELY "Vacant" (all rows) count as vacant
+   * - Feature flag: USE_SMART_VACANCY_DEDUPLICATION (default: true)
    */
   private static async getUnitsFromMasterCSV(): Promise<UnitData[]> {
     try {
@@ -207,10 +212,27 @@ export class UnifiedAnalytics {
         unitGroups.get(record.unit)!.push(record)
       }
       
+      // Check feature flag for smart vacancy deduplication (v18.3.0)
+      const useSmartDedup = process.env.USE_SMART_VACANCY_DEDUPLICATION !== 'false'
+      console.log(`[UNIFIED_ANALYTICS] Vacancy mode: ${useSmartDedup ? 'SMART deduplication (v18.3.0)' : 'LEGACY row-based'}`)
+      
+      // Track excluded units for transparency
+      const excludedFromVacant: Array<{ unit: string; statuses: string[] }> = []
+      
       // Convert to standardized format with proper unit-level deduplication
       const units: UnitData[] = Array.from(unitGroups.entries()).map(([unitCode, records]) => {
-        // Unit-level vacancy logic: Unit is vacant only if ALL rows show "Vacant" status
-        const isVacant = records.every(record => record.tenantStatus === 'Vacant')
+        const uniqueStatuses = [...new Set(records.map(r => r.tenantStatus || ''))]
+        const hasVacant = uniqueStatuses.some(s => s.toLowerCase() === 'vacant')
+        const hasNonVacant = uniqueStatuses.some(s => s.toLowerCase() !== 'vacant' && s !== '')
+        
+        // SMART VACANCY LOGIC (v18.3.0):
+        // Unit is vacant ONLY if ALL rows show "Vacant" and NO rows show Future/Notice/Current
+        // If unit has BOTH "Vacant" AND other statuses, it's NOT vacant (lease signed)
+        const isVacant = hasVacant && !hasNonVacant
+        
+        if (hasVacant && hasNonVacant && useSmartDedup) {
+          excludedFromVacant.push({ unit: unitCode, statuses: uniqueStatuses })
+        }
         
         // Use first record for unit metadata, but sum financial data
         const firstRecord = records[0]
@@ -221,7 +243,7 @@ export class UnifiedAnalytics {
           unit: unitCode,
           // STANDARD VACANCY DEFINITION: status "Vacant" = vacant, everything else = occupied
           isVacant,
-          tenantStatus: isVacant ? 'Vacant' : firstRecord.tenantStatus || '',
+          tenantStatus: isVacant ? 'Vacant' : (firstRecord.tenantStatus || ''),
           monthlyRent: totalMonthlyRent,
           marketRent,
           // Family units are specific unit numbers: 115, 116, 202, 313, 318
@@ -231,10 +253,19 @@ export class UnifiedAnalytics {
         }
       })
       
+      // Log excluded units for transparency
+      if (excludedFromVacant.length > 0 && useSmartDedup) {
+        console.log(`[UNIFIED_ANALYTICS] 📋 Excluded ${excludedFromVacant.length} units from vacant count (have Future/Notice tenants):`)
+        excludedFromVacant.forEach(({ unit, statuses }) => {
+          console.log(`  - ${unit}: ${statuses.join(', ')}`)
+        })
+      }
+      
       console.log(`[UNIFIED_ANALYTICS] Loaded ${masterData.length} CSV rows → ${units.length} unique units`)
       console.log(`[UNIFIED_ANALYTICS] Vacancy breakdown:`, {
         vacant: units.filter(u => u.isVacant).length,
         occupied: units.filter(u => !u.isVacant).length,
+        excludedFromVacant: excludedFromVacant.length,
         vacantStatuses: [...new Set(units.filter(u => u.isVacant).map(u => u.tenantStatus))],
         occupiedStatuses: [...new Set(units.filter(u => !u.isVacant).map(u => u.tenantStatus))],
         familyUnits: units.filter(u => u.isFamily).length,
