@@ -483,7 +483,10 @@ export class UnifiedAnalytics {
       })
 
       if (latestFromCsvData._max.updatedAt) {
-        return EasternTimeManager.toEasternDate(latestFromCsvData._max.updatedAt)
+        const easternDate = EasternTimeManager.toEasternDate(latestFromCsvData._max.updatedAt)
+        if (easternDate) {
+          return easternDate
+        }
       }
 
       // Ultimate fallback to today's date
