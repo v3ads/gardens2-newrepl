@@ -362,18 +362,51 @@ Daily Auto-Sync completed at ${new Date().toLocaleString('en-US', { timeZone: 'A
           return null
         }
         
+        // V18.3.1: Use smart row selection to handle duplicate unit statuses
+        // Group CSV rows by unit (may have multiple rows per unit: Vacant + Future)
+        const csvUnitGroups = new Map<string, typeof csvData>()
+        for (const row of csvData) {
+          if (!csvUnitGroups.has(row.unit)) {
+            csvUnitGroups.set(row.unit, [])
+          }
+          csvUnitGroups.get(row.unit)!.push(row)
+        }
+        
+        // Status priority: Future/Notice/Current > Vacant (match UnifiedAnalytics/RentIQ)
+        // Use prefix matching to handle variants like "Notice Unrented"
+        const getStatusPriority = (status: string | null | undefined): number => {
+          const s = (status || '').toLowerCase().trim()
+          if (s.startsWith('future')) return 4  // "Future", etc.
+          if (s.startsWith('notice')) return 3  // "Notice", "Notice Unrented", etc.
+          if (s.startsWith('current')) return 2 // "Current"
+          if (s.startsWith('vacant')) return 1  // "Vacant"
+          return 0 // Unknown status
+        }
+        
+        // Select best row per unit (highest priority status)
+        const selectedRows: typeof csvData = []
+        for (const [unit, rows] of csvUnitGroups) {
+          const selectedRow = rows.reduce((best, current) => {
+            const bestPriority = getStatusPriority(best.tenantStatus)
+            const currentPriority = getStatusPriority(current.tenantStatus)
+            return currentPriority > bestPriority ? current : best
+          })
+          selectedRows.push(selectedRow)
+        }
+        
+        // Count DISTINCT units (182), not total rows (226)
+        const totalUnits = csvUnitGroups.size || 182
+        
         // CRITICAL: Match UnifiedAnalytics/RentIQ logic - anything NOT 'Vacant' is occupied
-        // This includes 'Current', 'Notice', 'Notice Unrented', 'Future', etc.
-        const totalUnits = csvData.length
-        const vacantUnits = csvData.filter(row => 
+        const vacantUnits = selectedRows.filter(row => 
           row.tenantStatus?.toLowerCase() === 'vacant'
         )
-        const occupiedUnits = csvData.filter(row => 
+        const occupiedUnits = selectedRows.filter(row => 
           row.tenantStatus?.toLowerCase() !== 'vacant'
         )
         
-        // Calculate financial metrics
-        const actualMRR = csvData
+        // Calculate financial metrics from selected rows only
+        const actualMRR = selectedRows
           .filter(row => row.monthlyRent && row.tenantStatus?.toLowerCase() === 'current')
           .reduce((sum, row) => {
             const rent = typeof row.monthlyRent === 'number' ? row.monthlyRent : 
@@ -381,14 +414,14 @@ Daily Auto-Sync completed at ${new Date().toLocaleString('en-US', { timeZone: 'A
             return sum + rent
           }, 0)
         
-        const marketPotential = csvData
+        const marketPotential = selectedRows
           .reduce((sum, row) => {
             const marketRent = typeof row.marketRent === 'number' ? row.marketRent :
                               parseFloat(String(row.marketRent || '0').replace(/[$,]/g, '')) || 0
             return sum + marketRent
           }, 0)
         
-        // FIXED: Use same vacancy loss calculation as unified analytics (only vacant units)
+        // Use same vacancy loss calculation as unified analytics (only vacant units)
         const vacancyLoss = vacantUnits.reduce((sum, row) => {
           const marketRent = typeof row.marketRent === 'number' ? row.marketRent :
                             parseFloat(String(row.marketRent || '0').replace(/[$,]/g, '')) || 0
@@ -405,12 +438,14 @@ Daily Auto-Sync completed at ${new Date().toLocaleString('en-US', { timeZone: 'A
           vacancy_loss: Math.round(vacancyLoss)
         }
         
-        console.log(`[EMAIL_SERVICE] ✅ CSV analytics computed:`, {
+        console.log(`[EMAIL_SERVICE] ✅ CSV analytics computed (v18.3.1 smart selection):`, {
           date: emailMetrics.snapshot_date,
           total: emailMetrics.total_units,
           occupied: emailMetrics.occupied_units,
           vacant: emailMetrics.vacant_units,
-          mrr: emailMetrics.actual_mrr
+          mrr: emailMetrics.actual_mrr,
+          distinctUnits: csvUnitGroups.size,
+          totalRows: csvData.length
         })
         
         return emailMetrics

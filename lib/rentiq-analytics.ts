@@ -103,13 +103,14 @@ export class RentIQAnalytics {
       }
       
       // Status priority: Future/Notice/Current > Vacant (match UnifiedAnalytics)
+      // Use prefix matching to handle variants like "Notice Unrented"
       const getStatusPriority = (status: string | null | undefined): number => {
-        const s = (status || '').toLowerCase()
-        if (s === 'future') return 4
-        if (s === 'notice') return 3
-        if (s === 'current') return 2
-        if (s === 'vacant') return 1
-        return 0
+        const s = (status || '').toLowerCase().trim()
+        if (s.startsWith('future')) return 4  // "Future", etc.
+        if (s.startsWith('notice')) return 3  // "Notice", "Notice Unrented", etc.
+        if (s.startsWith('current')) return 2 // "Current"
+        if (s.startsWith('vacant')) return 1  // "Vacant"
+        return 0 // Unknown status
       }
       
       // Select best row per unit (highest priority status)

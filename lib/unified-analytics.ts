@@ -218,12 +218,13 @@ export class UnifiedAnalytics {
       console.log(`[UNIFIED_ANALYTICS] Vacancy mode: ${useSmartDedup ? 'SMART row selection (v18.3.0)' : 'LEGACY row-based'}`)
       
       // Define status priority: higher priority = more important status
+      // Use prefix matching to handle variants like "Notice Unrented"
       const getStatusPriority = (status: string | null | undefined): number => {
-        const s = (status || '').toLowerCase()
-        if (s === 'future') return 4  // Highest priority: signed lease, future move-in
-        if (s === 'notice') return 3  // Tenant leaving, but still current
-        if (s === 'current') return 2 // Active tenant
-        if (s === 'vacant') return 1  // Lowest priority
+        const s = (status || '').toLowerCase().trim()
+        if (s.startsWith('future')) return 4  // "Future", etc.
+        if (s.startsWith('notice')) return 3  // "Notice", "Notice Unrented", etc.
+        if (s.startsWith('current')) return 2 // "Current"
+        if (s.startsWith('vacant')) return 1  // "Vacant"
         return 0 // Unknown status
       }
       
