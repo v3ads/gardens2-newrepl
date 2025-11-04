@@ -38,6 +38,9 @@ export interface RentIQThreshold {
 export class RentIQAnalytics {
   private static instance: RentIQAnalytics
   
+  // Units excluded from RentIQ pool (special circumstances: renovation, reserved, etc.)
+  private static readonly EXCLUDED_UNITS = ['704', '111', '312', '410', '510', '902', '311']
+  
   static getInstance(): RentIQAnalytics {
     if (!RentIQAnalytics.instance) {
       RentIQAnalytics.instance = new RentIQAnalytics()
@@ -219,8 +222,15 @@ export class RentIQAnalytics {
         // CRITICAL: Sort vacant units by HIGHEST days vacant first (descending order)
         // This ensures units with longest vacancy get priority for progressive discounting
         const poolUnits = vacantUnits
+          .filter(unit => !RentIQAnalytics.EXCLUDED_UNITS.includes(unit['Unit']))
           .sort((a, b) => (b['Days Vacant'] || 0) - (a['Days Vacant'] || 0))
           .slice(0, rentiqPoolCount)
+        
+        // Log excluded units if any were filtered
+        const excludedFromPool = vacantUnits.filter(unit => RentIQAnalytics.EXCLUDED_UNITS.includes(unit['Unit']))
+        if (excludedFromPool.length > 0) {
+          console.log(`[RENTIQ] 🚫 Excluded ${excludedFromPool.length} units from RentIQ pool: ${excludedFromPool.map(u => u['Unit']).join(', ')}`)
+        }
         
         const thresholdsArray = await this.getThresholdsArray()
         
@@ -325,7 +335,7 @@ export class RentIQAnalytics {
       return 'Upgraded-Unfurnished'
     }
     if (type.includes('student')) {
-      return 'Student Unit'
+      return 'Shared 1 BD Furnished'
     }
     
     return null
@@ -337,7 +347,7 @@ export class RentIQAnalytics {
   private assignCategoryByMarketRent(marketRent: number, thresholds: RentIQThreshold[]): string {
     // Exact market rent to category mapping
     const categoryMapping: { [key: number]: string } = {
-      1500: 'Student Unit',
+      1500: 'Shared 1 BD Furnished',
       1990: 'Basic-Unfurnished',
       2240: 'Basic-Furnished',
       2020: 'Upgraded-Unfurnished',
@@ -357,7 +367,7 @@ export class RentIQAnalytics {
     if (marketRent >= 2000) return 'Upgraded-Furnished'
     if (marketRent >= 1900) return 'Basic-Furnished'
     if (marketRent >= 1700) return 'Basic-Unfurnished'
-    return 'Student Unit'
+    return 'Shared 1 BD Furnished'
   }
 
   /**
