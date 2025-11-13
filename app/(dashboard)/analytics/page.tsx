@@ -1,48 +1,83 @@
-'use client'
+"use client";
 
-import { useRouter } from 'next/navigation'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import { Button } from '@/components/ui/button'
-import { toast } from 'sonner'
-import { Building2, DollarSign, Wrench, LineChart } from 'lucide-react'
-import { useAnalytics } from '@/contexts/analytics-context'
-import { useEffect, useState } from 'react'
-import { useSession } from 'next-auth/react'
+import { useRouter } from "next/navigation";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { toast } from "sonner";
+import { Building2, DollarSign, Wrench, LineChart } from "lucide-react";
+import { useAnalytics } from "@/contexts/analytics-context";
+import { useEffect, useState } from "react";
+import { useSession } from "next-auth/react";
 
 const analyticsCategories = [
   {
-    key: 'occupancy',
-    title: 'Occupancy & Leasing',
-    description: 'Rates, vacancy days, move‑ins/outs, expirations, renewals.',
+    key: "occupancy",
+    title: "Occupancy & Leasing",
+    description:
+      "Are our units filled with the right residents, and how healthy is the leasing funnel?",
     icon: Building2,
   },
   {
-    key: 'financial',
-    title: 'Financial',
-    description: 'MRR, MoM growth, ARPU, vacancy loss, collections.',
+    key: "financial",
+    title: "Financial",
+    description:
+      "Is monthly revenue on track, and where are we leaking dollars through vacancy or collections?",
     icon: DollarSign,
   },
   {
-    key: 'operations',
-    title: 'Operational Efficiency',
-    description: 'Turnover %, make‑ready cycle, maintenance‑linked vacancy.',
+    key: "operations",
+    title: "Operational Efficiency",
+    description:
+      "How fast are turns and maintenance getting done, and where are operations slowing us down?",
     icon: Wrench,
   },
   {
-    key: 'forecasts',
-    title: 'Forecasts & Insights',
-    description: 'Occupancy & MRR projections, seasonality, churn risk.',
+    key: "forecasts",
+    title: "Forecasts & Insights",
+    description:
+      "What’s coming next if we change nothing—and where are the landmines?",
     icon: LineChart,
   },
-]
+];
 
 export default function AnalyticsPage() {
-  const router = useRouter()
-  const { setSelectedCategory } = useAnalytics()
+  const router = useRouter();
+  const { setSelectedCategory } = useAnalytics();
+  const { data: session, status } = useSession();
+  const [isLoading, setIsLoading] = useState(true);
+
+  useEffect(() => {
+    if (status === "loading") return;
+
+    if (!session) {
+      toast.error("You need to be signed in to view analytics.");
+      router.push("/auth/signin");
+      return;
+    }
+
+    setIsLoading(false);
+  }, [session, status, router]);
 
   const handleCategorySelect = (categoryKey: string) => {
-    setSelectedCategory(categoryKey)
-    router.push(`/analytics/${categoryKey}`)
+    setSelectedCategory(categoryKey);
+    router.push(`/analytics/${categoryKey}`);
+  };
+
+  if (isLoading) {
+    return (
+      <div className="flex flex-col items-center justify-center h-[60vh] space-y-4">
+        <div className="h-10 w-10 border-4 border-primary border-t-transparent rounded-full animate-spin" />
+        <p className="text-muted-foreground">
+          Loading your analytics dashboard…
+        </p>
+      </div>
+    );
   }
 
   return (
@@ -50,13 +85,14 @@ export default function AnalyticsPage() {
       <div className="space-y-2">
         <h1 className="text-3xl font-bold">Analytics Dashboard</h1>
         <p className="text-muted-foreground">
-          Comprehensive insights into property management performance and metrics
+          Comprehensive insights into property management performance and
+          metrics
         </p>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
         {analyticsCategories.map((category) => {
-          const IconComponent = category.icon
+          const IconComponent = category.icon;
           return (
             <Card
               key={category.key}
@@ -77,10 +113,9 @@ export default function AnalyticsPage() {
                 </CardDescription>
               </CardContent>
             </Card>
-          )
+          );
         })}
       </div>
-
     </div>
-  )
+  );
 }
