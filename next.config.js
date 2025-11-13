@@ -72,8 +72,13 @@ const nextConfig = {
     domains: ['lh3.googleusercontent.com'],
   },
   
-  // Allow all hosts for Replit preview
+  // Allow Replit preview iframe in development
   async headers() {
+    // Don't set X-Frame-Options in development to allow Replit preview
+    if (process.env.NODE_ENV === 'development') {
+      return []
+    }
+    
     return [
       {
         source: '/(.*)',
