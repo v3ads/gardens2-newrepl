@@ -13,6 +13,9 @@ const nextConfig = {
   
   // Explicit build directories to prevent dev/prod artifact collision
   distDir: process.env.NEXT_DIST_DIR || '.next',
+  
+  // Standalone output for better Replit compatibility
+  output: 'standalone',
 
   // Prevent native modules from being bundled (fixes build crashes) - Next.js 14 format
   experimental: {
