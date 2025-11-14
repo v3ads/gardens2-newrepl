@@ -41,6 +41,25 @@ export class RentIQAnalytics {
   // Units excluded from RentIQ pool (special circumstances: renovation, reserved, etc.)
   private static readonly EXCLUDED_UNITS = ['704', '111', '312', '410', '510', '902', '311']
   
+  /**
+   * Check if a unit is a student unit (has - A or - B in the name)
+   * Student units are always excluded from RentIQ calculations
+   * Pattern: "XXX - A" or "XXX - B" (e.g., "114 - A", "120 - B")
+   */
+  private static isStudentUnit(unitName: string): boolean {
+    const trimmed = unitName.trim()
+    // Match " - A" or " - B" at end of string (case insensitive)
+    return /\s-\s[AB]$/i.test(trimmed)
+  }
+  
+  /**
+   * Check if a unit should be excluded from RentIQ entirely
+   * Combines static exclusion list and student unit check
+   */
+  private static isRentIQExcludedUnit(unitName: string): boolean {
+    return this.EXCLUDED_UNITS.includes(unitName) || this.isStudentUnit(unitName)
+  }
+  
   static getInstance(): RentIQAnalytics {
     if (!RentIQAnalytics.instance) {
       RentIQAnalytics.instance = new RentIQAnalytics()
@@ -127,7 +146,8 @@ export class RentIQAnalytics {
         csvDataMap.set(unit, selectedRow)
       }
       
-      const masterData = masterDataRaw.map(mtd => ({
+      // Map raw data and EXCLUDE student units and other RentIQ-excluded units
+      const masterDataAll = masterDataRaw.map(mtd => ({
         'Unit': mtd.unitCode,
         // Use smart-selected CSV row (highest priority status: Future > Notice > Current > Vacant)
         'Tenant Status': csvDataMap.get(mtd.unitCode)?.tenantStatus || (mtd.isOccupied ? 'Current' : 'Vacant'),
@@ -137,16 +157,33 @@ export class RentIQAnalytics {
         'Days Vacant': csvDataMap.get(mtd.unitCode)?.daysVacant || 0
       }))
 
-      console.log(`[RENTIQ] Found ${masterData.length} total units for ${targetDate}`)
+      // Filter out student units and other excluded units BEFORE any calculations
+      const studentUnits = masterDataAll.filter(row => RentIQAnalytics.isStudentUnit(row['Unit']))
+      const otherExcludedUnits = masterDataAll.filter(row => 
+        RentIQAnalytics.EXCLUDED_UNITS.includes(row['Unit']) && !RentIQAnalytics.isStudentUnit(row['Unit'])
+      )
+      const masterData = masterDataAll.filter(row => !RentIQAnalytics.isRentIQExcludedUnit(row['Unit']))
+
+      console.log(`[RENTIQ] Found ${masterDataAll.length} total units for ${targetDate}`)
+      if (studentUnits.length > 0) {
+        console.log(`[RENTIQ] 🎓 Excluded ${studentUnits.length} student units: ${[...new Set(studentUnits.map(u => u['Unit']))].join(', ')}`)
+      }
+      if (otherExcludedUnits.length > 0) {
+        console.log(`[RENTIQ] 🚫 Excluded ${otherExcludedUnits.length} special units: ${[...new Set(otherExcludedUnits.map(u => u['Unit']))].join(', ')}`)
+      }
 
       if (masterData.length === 0) {
         console.warn(`[RENTIQ] No master tenant data found for date: ${targetDate}`)
         throw new Error(`No master tenant data available for ${targetDate}`)
       }
 
-      // Get total unique units from master.csv (all units including family units)
+      // Get total unique units from master.csv EXCLUDING student units and other excluded units
       // V18.3.0: Count DISTINCT units, not total rows (which includes duplicate statuses)
-      const totalUnits = csvUnitGroups.size || 182 // 182 unique units (fallback for safety)
+      const allUniqueUnits = csvUnitGroups.size || 182
+      const excludedUnitCount = [...new Set([...studentUnits.map(u => u['Unit']), ...otherExcludedUnits.map(u => u['Unit'])])].length
+      const totalUnits = allUniqueUnits - excludedUnitCount
+      
+      console.log(`[RENTIQ] Total units for RentIQ: ${totalUnits} (${allUniqueUnits} total - ${excludedUnitCount} excluded)`)
 
       // V18.3.0 SMART VACANCY DEDUPLICATION:
       // Group by unit to handle units with multiple status rows (e.g., Vacant + Future)
@@ -221,16 +258,10 @@ export class RentIQAnalytics {
       if (rentiqActive && vacantUnits.length > 0) {
         // CRITICAL: Sort vacant units by HIGHEST days vacant first (descending order)
         // This ensures units with longest vacancy get priority for progressive discounting
+        // NOTE: Student units and other excluded units already filtered out in masterData
         const poolUnits = vacantUnits
-          .filter(unit => !RentIQAnalytics.EXCLUDED_UNITS.includes(unit['Unit']))
           .sort((a, b) => (b['Days Vacant'] || 0) - (a['Days Vacant'] || 0))
           .slice(0, rentiqPoolCount)
-        
-        // Log excluded units if any were filtered
-        const excludedFromPool = vacantUnits.filter(unit => RentIQAnalytics.EXCLUDED_UNITS.includes(unit['Unit']))
-        if (excludedFromPool.length > 0) {
-          console.log(`[RENTIQ] 🚫 Excluded ${excludedFromPool.length} units from RentIQ pool: ${excludedFromPool.map(u => u['Unit']).join(', ')}`)
-        }
         
         const thresholdsArray = await this.getThresholdsArray()
         
