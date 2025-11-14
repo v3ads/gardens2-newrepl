@@ -8,20 +8,39 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
 import { Building2, DollarSign, Wrench, LineChart } from "lucide-react";
 import { useAnalytics } from "@/contexts/analytics-context";
 import { useEffect, useState } from "react";
 import { useSession } from "next-auth/react";
 
-const analyticsCategories = [
+type AnalyticsCategoryKey =
+  | "occupancy"
+  | "financial"
+  | "operations"
+  | "forecasts";
+
+interface AnalyticsCategory {
+  key: AnalyticsCategoryKey;
+  title: string;
+  description: string;
+  icon: React.ComponentType<React.SVGProps<SVGSVGElement>>;
+  borderClass: string;
+  iconWrapperClass: string;
+  iconClass: string;
+}
+
+const analyticsCategories: AnalyticsCategory[] = [
   {
     key: "occupancy",
     title: "Occupancy & Leasing",
     description:
       "Are our units filled with the right residents, and how healthy is the leasing funnel?",
     icon: Building2,
+    borderClass:
+      "border-emerald-500/40 hover:border-emerald-300/80 hover:bg-emerald-950/40",
+    iconWrapperClass: "bg-emerald-500/10 border border-emerald-500/40",
+    iconClass: "text-emerald-300",
   },
   {
     key: "financial",
@@ -29,6 +48,10 @@ const analyticsCategories = [
     description:
       "Is monthly revenue on track, and where are we leaking dollars through vacancy or collections?",
     icon: DollarSign,
+    borderClass:
+      "border-lime-500/40 hover:border-lime-300/80 hover:bg-lime-950/40",
+    iconWrapperClass: "bg-lime-500/10 border border-lime-500/40",
+    iconClass: "text-lime-300",
   },
   {
     key: "operations",
@@ -36,6 +59,10 @@ const analyticsCategories = [
     description:
       "How fast are turns and maintenance getting done, and where are operations slowing us down?",
     icon: Wrench,
+    borderClass:
+      "border-amber-500/40 hover:border-amber-300/80 hover:bg-amber-950/40",
+    iconWrapperClass: "bg-amber-500/10 border border-amber-500/40",
+    iconClass: "text-amber-300",
   },
   {
     key: "forecasts",
@@ -43,6 +70,10 @@ const analyticsCategories = [
     description:
       "What’s coming next if we change nothing—and where are the landmines?",
     icon: LineChart,
+    borderClass:
+      "border-sky-500/40 hover:border-sky-300/80 hover:bg-sky-950/40",
+    iconWrapperClass: "bg-sky-500/10 border border-sky-500/40",
+    iconClass: "text-sky-300",
   },
 ];
 
@@ -64,7 +95,7 @@ export default function AnalyticsPage() {
     setIsLoading(false);
   }, [session, status, router]);
 
-  const handleCategorySelect = (categoryKey: string) => {
+  const handleCategorySelect = (categoryKey: AnalyticsCategoryKey) => {
     setSelectedCategory(categoryKey);
     router.push(`/analytics/${categoryKey}`);
   };
@@ -96,13 +127,22 @@ export default function AnalyticsPage() {
           return (
             <Card
               key={category.key}
-              className="cursor-pointer transition-all duration-200 hover:shadow-lg hover:scale-105 hover:border-primary/50"
+              className={[
+                "cursor-pointer transition-all duration-200",
+                "hover:shadow-lg hover:scale-[1.02]",
+                "bg-background/80 backdrop-blur-sm",
+                category.borderClass,
+              ].join(" ")}
               onClick={() => handleCategorySelect(category.key)}
             >
               <CardHeader className="pb-3">
                 <div className="flex items-center space-x-3">
-                  <div className="p-2 rounded-lg bg-primary/10 border border-primary/20">
-                    <IconComponent className="h-6 w-6 text-primary" />
+                  <div
+                    className={`p-2 rounded-lg ${category.iconWrapperClass}`}
+                  >
+                    <IconComponent
+                      className={`h-6 w-6 ${category.iconClass}`}
+                    />
                   </div>
                   <CardTitle className="text-lg">{category.title}</CardTitle>
                 </div>
