@@ -361,17 +361,19 @@ export class RentIQAnalytics {
 
   /**
    * Assign category based on exact market rent match (fallback)
+   * Updated tier structure: Basic (Monaco/Martinique/Capri), Premium (Nautica/Portofino), Shared (Student)
    */
   private assignCategoryByMarketRent(marketRent: number, thresholds: RentIQThreshold[]): string {
-    // Exact market rent to category mapping
+    // Exact market rent to category mapping (no more Upgraded tier)
     const categoryMapping: { [key: number]: string } = {
       1500: 'Shared 1 BD Furnished',
-      1990: 'Basic-Unfurnished',
-      2240: 'Basic-Furnished',
-      2020: 'Upgraded-Unfurnished',
-      2370: 'Upgraded-Furnished',
-      2220: 'Premium-Unfurnished',
-      2570: 'Premium-Furnished'
+      1990: 'Basic-Unfurnished',    // Monaco/Martinique unfurnished
+      2000: 'Basic-Unfurnished',    // Capri unfurnished
+      2020: 'Basic-Unfurnished',    // Capri unfurnished variant
+      2220: 'Premium-Unfurnished',  // Nautica/Portofino unfurnished
+      2240: 'Basic-Furnished',      // Monaco/Martinique/Capri furnished
+      2370: 'Basic-Furnished',      // High-end Basic furnished
+      2570: 'Premium-Furnished'     // Nautica/Portofino furnished
     }
 
     const category = categoryMapping[marketRent]
@@ -379,10 +381,10 @@ export class RentIQAnalytics {
       return category
     }
 
-    // Fallback: assign based on rent ranges if no exact match
-    if (marketRent >= 2300) return 'Premium-Furnished'
+    // Fallback: assign based on rent ranges (no more Upgraded tier)
+    if (marketRent >= 2500) return 'Premium-Furnished'
     if (marketRent >= 2200) return 'Premium-Unfurnished'
-    if (marketRent >= 2000) return 'Upgraded-Furnished'
+    if (marketRent >= 2100) return 'Basic-Furnished'
     if (marketRent >= 1900) return 'Basic-Furnished'
     if (marketRent >= 1700) return 'Basic-Unfurnished'
     return 'Shared 1 BD Furnished'
@@ -533,7 +535,7 @@ export class RentIQAnalytics {
   }
 
   /**
-   * Get threshold settings
+   * Get threshold settings with backward-compatible migration from Upgraded to Basic tier
    */
   async getThresholds(): Promise<Record<string, number>> {
     try {
@@ -545,8 +547,44 @@ export class RentIQAnalytics {
       if (stored?.value) {
         try {
           const parsed = JSON.parse(stored.value)
-          console.log(`[RENTIQ] ✅ Loaded thresholds from database:`, parsed)
-          return parsed
+          
+          // Migrate legacy Upgraded thresholds to Basic (backward compatibility)
+          const migrated: Record<string, number> = {}
+          let hasMigration = false
+          
+          // First, copy all existing values
+          for (const [key, value] of Object.entries(parsed)) {
+            migrated[key] = value as number
+          }
+          
+          // Then migrate Upgraded keys ONLY if corresponding Basic key doesn't exist
+          for (const [key, value] of Object.entries(parsed)) {
+            if (key.includes('upgraded')) {
+              const newKey = key.replace('upgraded', 'basic')
+              
+              // Only migrate if Basic key doesn't already exist (preserve modern values)
+              if (!migrated[newKey]) {
+                migrated[newKey] = value as number
+                hasMigration = true
+                console.log(`[RENTIQ] 🔄 Migrating threshold: ${key} → ${newKey} (${value})`)
+              } else {
+                console.log(`[RENTIQ] ⏭️  Skipping ${key}: ${newKey} already exists with value ${migrated[newKey]}`)
+              }
+              
+              // Remove old Upgraded key
+              delete migrated[key]
+              hasMigration = true
+            }
+          }
+          
+          // If migration occurred, save updated thresholds
+          if (hasMigration) {
+            await this.updateThresholds(migrated)
+            console.log(`[RENTIQ] ✅ Migrated thresholds from Upgraded to Basic tier`)
+          }
+          
+          console.log(`[RENTIQ] ✅ Loaded thresholds from database:`, migrated)
+          return migrated
         } catch (error) {
           console.warn('[RENTIQ] Failed to parse stored thresholds, using defaults:', error)
         }
@@ -555,18 +593,16 @@ export class RentIQAnalytics {
       console.warn('[RENTIQ] Failed to load thresholds from database, using defaults:', error)
     }
 
-    // Return defaults if not found in database
+    // Return updated defaults (no more Upgraded tier)
     const defaults = {
       'min_basic_unfurnished': 1700,
       'min_basic_furnished': 1900,
-      'min_upgraded_unfurnished': 1720,
-      'min_upgraded_furnished': 2000,
       'min_premium_unfurnished': 2100,
       'min_premium_furnished': 2250,
       'min_student_unit': 1500
     }
 
-    console.log(`[RENTIQ] Using default thresholds`)
+    console.log(`[RENTIQ] Using default thresholds (Basic/Premium/Shared structure)`)
     return defaults
   }
 
