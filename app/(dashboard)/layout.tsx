@@ -20,20 +20,18 @@ export default async function DashboardLayout({
   }
 
   return (
-    <SyncStatusProvider>
-      <AnalyticsProvider>
-        <div className="min-h-screen bg-background">
+    <AnalyticsProvider>
+      <div className="flex min-h-screen">
+        <Sidebar />
+        <div className="flex-1 flex flex-col">
           <Header />
-          <div className="flex">
-            <aside className="hidden md:block w-64 min-h-[calc(100vh-3.5rem)] border-r">
-              <Sidebar />
-            </aside>
-            <main className="flex-1 p-3 md:p-6 w-full min-w-0">
+          <main className="flex-1 overflow-auto">
+            <div className="container mx-auto p-6">
               {children}
-            </main>
-          </div>
+            </div>
+          </main>
         </div>
-      </AnalyticsProvider>
-    </SyncStatusProvider>
+      </div>
+    </AnalyticsProvider>
   )
 }

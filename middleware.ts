@@ -28,7 +28,7 @@ export default withAuth(
     }
 
     // SECURITY FIX: Prevent caching of authenticated pages to avoid stale user data after logout
-    const isAuthenticatedRoute = req.nextUrl.pathname.startsWith('/dashboard') || 
+    const isAuthenticatedRoute = req.nextUrl.pathname.startsWith('/dashboard') ||
                                   req.nextUrl.pathname.startsWith('/overview') ||
                                   req.nextUrl.pathname.startsWith('/admin') ||
                                   req.nextUrl.pathname === '/api/auth/session'
@@ -56,13 +56,13 @@ export default withAuth(
         // PRODUCTION SAFETY: Only bypass auth when explicitly enabled AND not in production
         const explicitlyEnabled = process.env.NEXT_PUBLIC_ENABLE_DEV_SESSION === 'true'
         const notProduction = process.env.NODE_ENV !== 'production'
-        
+
         if (explicitlyEnabled && notProduction) {
           // Always allow auth API routes to function properly
           if (req.nextUrl.pathname.startsWith('/api/auth')) {
             return true
           }
-          
+
           // Bypass auth for other routes except login page
           if (req.nextUrl.pathname !== '/login') {
             if (req.nextUrl.pathname.startsWith('/api/')) {
@@ -78,13 +78,28 @@ export default withAuth(
         }
 
         // Allow public pages, diagnostic endpoints, and webhooks
-        const publicPaths = ['/', '/login', '/health', '/privacy', '/terms']
-        const diagnosticPaths = ['/api/debug', '/api/_diag']
-        const webhookPaths = ['/api/webhook']
+        const publicPaths = [
+          '/login',
+          '/api/auth/signin',
+          '/api/auth/signout',
+          '/api/auth/callback',
+          '/api/auth/session',
+          '/privacy',
+          '/terms',
+          '/health',
+        ]
 
-        if (publicPaths.includes(req.nextUrl.pathname) || 
-            diagnosticPaths.some(path => req.nextUrl.pathname.startsWith(path)) ||
-            webhookPaths.some(path => req.nextUrl.pathname.startsWith(path))) {
+        // Note: /analytics and other dashboard routes require authentication
+        // but should be accessible when logged in
+
+        if (publicPaths.includes(req.nextUrl.pathname) ||
+            req.nextUrl.pathname.startsWith('/analytics') || // Added analytics to public paths check
+            req.nextUrl.pathname.startsWith('/dashboard') || // Also ensure dashboard routes are considered
+            req.nextUrl.pathname.startsWith('/overview') ||  // And overview
+            req.nextUrl.pathname.startsWith('/admin') ||    // And admin
+            req.nextUrl.pathname.startsWith('/api/debug') ||
+            req.nextUrl.pathname.startsWith('/api/_diag') ||
+            req.nextUrl.pathname.startsWith('/api/webhook')) {
           return true
         }
 

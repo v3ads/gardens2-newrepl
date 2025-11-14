@@ -1,6 +1,8 @@
 "use client";
 
 import { useRouter } from "next/navigation";
+
+// Ensure this page is properly exported as default
 import {
   Card,
   CardContent,
