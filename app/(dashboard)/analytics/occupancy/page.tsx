@@ -137,30 +137,10 @@ export default function OccupancyPage() {
     return cleanup
   }, [])
 
-  // Initial load with session validation
+  // Initial load
   useEffect(() => {
-    console.log('[OCCUPANCY_PAGE] Component mounted, checking authentication...')
-    
-    // Validate session first, then load data
-    fetch('/api/auth/session', { 
-      credentials: 'same-origin',
-      cache: 'no-store'
-    })
-    .then(response => {
-      console.log('[OCCUPANCY_PAGE] Session check response:', response.status)
-      if (response.ok) {
-        console.log('[OCCUPANCY_PAGE] Session valid, loading KPIs...')
-        fetchKPIs(0)
-      } else {
-        console.error('[OCCUPANCY_PAGE] Session invalid, redirecting to login...')
-        window.location.href = '/api/auth/signin'
-      }
-    })
-    .catch(err => {
-      console.error('[OCCUPANCY_PAGE] Session check failed:', err)
-      // Still try to load data in case it's a false positive
-      fetchKPIs(0)
-    })
+    console.log('[OCCUPANCY_PAGE] Component mounted, loading KPIs...')
+    fetchKPIs(0)
   }, [])
 
   return (

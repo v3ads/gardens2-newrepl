@@ -10,11 +10,8 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { toast } from "sonner";
 import { Building2, DollarSign, Wrench, LineChart } from "lucide-react";
 import { useAnalytics } from "@/contexts/analytics-context";
-import { useEffect, useState } from "react";
-import { useSession } from "next-auth/react";
 
 type AnalyticsCategoryKey =
   | "occupancy"
@@ -82,36 +79,11 @@ const analyticsCategories: AnalyticsCategory[] = [
 export default function AnalyticsPage() {
   const router = useRouter();
   const { setSelectedCategory } = useAnalytics();
-  const { data: session, status } = useSession();
-  const [isLoading, setIsLoading] = useState(true);
-
-  useEffect(() => {
-    if (status === "loading") return;
-
-    if (!session) {
-      toast.error("You need to be signed in to view analytics.");
-      router.push("/auth/signin");
-      return;
-    }
-
-    setIsLoading(false);
-  }, [session, status, router]);
 
   const handleCategorySelect = (categoryKey: AnalyticsCategoryKey) => {
     setSelectedCategory(categoryKey);
     router.push(`/analytics/${categoryKey}`);
   };
-
-  if (isLoading) {
-    return (
-      <div className="flex flex-col items-center justify-center h-[60vh] space-y-4">
-        <div className="h-10 w-10 border-4 border-primary border-t-transparent rounded-full animate-spin" />
-        <p className="text-muted-foreground">
-          Loading your analytics dashboard…
-        </p>
-      </div>
-    );
-  }
 
   return (
     <div className="space-y-6">
