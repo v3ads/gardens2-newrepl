@@ -70,7 +70,39 @@ async function getGoogleSheetsClient() {
     access_token: accessToken
   });
 
-  return google.sheets({ version: 'v4', auth: oauth2Client });
+  return google.sheets({ 
+    version: 'v4', 
+    auth: oauth2Client,
+    timeout: 120000 // 120 seconds timeout
+  });
+}
+
+async function retryWithBackoff<T>(
+  operation: () => Promise<T>,
+  maxRetries: number = 3,
+  baseDelay: number = 1000
+): Promise<T> {
+  for (let attempt = 0; attempt < maxRetries; attempt++) {
+    try {
+      return await operation();
+    } catch (error: any) {
+      const isLastAttempt = attempt === maxRetries - 1;
+      const isRetryableError = 
+        error.code === 'ETIMEDOUT' || 
+        error.code === 'ECONNRESET' ||
+        error.code === 429 || 
+        error.code === 503;
+
+      if (isLastAttempt || !isRetryableError) {
+        throw error;
+      }
+
+      const delay = baseDelay * Math.pow(2, attempt);
+      console.log(`[RENTIQ_SHEETS] Retry attempt ${attempt + 1}/${maxRetries} after ${delay}ms delay...`);
+      await new Promise(resolve => setTimeout(resolve, delay));
+    }
+  }
+  throw new Error('Retry logic failed unexpectedly');
 }
 
 export class RentIQSheetsSync {
@@ -119,106 +151,119 @@ export class RentIQSheetsSync {
       // Combine all data
       const allData = [...summaryHeaders, ...unitHeaders, ...unitRows];
       
-      // Check if sheet exists, create if not
+      // Check if sheet exists, create if not - and cache sheetId
+      let sheetId: number;
       try {
-        const sheetMetadata = await sheets.spreadsheets.get({
-          spreadsheetId: SPREADSHEET_ID
-        });
+        const sheetMetadata = await retryWithBackoff(() => 
+          sheets.spreadsheets.get({
+            spreadsheetId: SPREADSHEET_ID
+          })
+        );
         
-        const sheetExists = sheetMetadata.data.sheets?.some(
+        const targetSheet = sheetMetadata.data.sheets?.find(
           (sheet: any) => sheet.properties?.title === SHEET_NAME
         );
         
-        if (!sheetExists) {
+        if (!targetSheet) {
           console.log('[RENTIQ_SHEETS] Creating new sheet...')
-          await sheets.spreadsheets.batchUpdate({
-            spreadsheetId: SPREADSHEET_ID,
-            requestBody: {
-              requests: [{
-                addSheet: {
-                  properties: {
-                    title: SHEET_NAME
+          const createResult = await retryWithBackoff(() =>
+            sheets.spreadsheets.batchUpdate({
+              spreadsheetId: SPREADSHEET_ID,
+              requestBody: {
+                requests: [{
+                  addSheet: {
+                    properties: {
+                      title: SHEET_NAME
+                    }
                   }
-                }
-              }]
-            }
-          });
+                }]
+              }
+            })
+          );
+          sheetId = createResult.data.replies?.[0]?.addSheet?.properties?.sheetId || 0;
+        } else {
+          sheetId = targetSheet.properties?.sheetId || 0;
         }
+        
+        console.log(`[RENTIQ_SHEETS] Using sheet ID: ${sheetId}`);
       } catch (error) {
         console.error('[RENTIQ_SHEETS] Error checking/creating sheet:', error)
         throw error
       }
       
-      // Clear existing data and write new data
-      await sheets.spreadsheets.values.clear({
-        spreadsheetId: SPREADSHEET_ID,
-        range: `${SHEET_NAME}!A1:Z1000`
-      });
+      // Clear existing data and write new data with retry logic
+      await retryWithBackoff(() =>
+        sheets.spreadsheets.values.clear({
+          spreadsheetId: SPREADSHEET_ID,
+          range: `${SHEET_NAME}!A1:Z1000`
+        })
+      );
       
-      await sheets.spreadsheets.values.update({
-        spreadsheetId: SPREADSHEET_ID,
-        range: `${SHEET_NAME}!A1`,
-        valueInputOption: 'USER_ENTERED',
-        requestBody: {
-          values: allData
-        }
-      });
+      await retryWithBackoff(() =>
+        sheets.spreadsheets.values.update({
+          spreadsheetId: SPREADSHEET_ID,
+          range: `${SHEET_NAME}!A1`,
+          valueInputOption: 'USER_ENTERED',
+          requestBody: {
+            values: allData
+          }
+        })
+      );
       
-      // Format the sheet for better readability
-      await sheets.spreadsheets.batchUpdate({
-        spreadsheetId: SPREADSHEET_ID,
-        requestBody: {
-          requests: [
-            {
-              repeatCell: {
-                range: {
-                  sheetId: (await sheets.spreadsheets.get({ spreadsheetId: SPREADSHEET_ID }))
-                    .data.sheets?.find((s: any) => s.properties?.title === SHEET_NAME)?.properties?.sheetId,
-                  startRowIndex: 0,
-                  endRowIndex: 1
-                },
-                cell: {
-                  userEnteredFormat: {
-                    backgroundColor: { red: 0.2, green: 0.7, blue: 0.4 },
-                    textFormat: { bold: true, foregroundColor: { red: 1, green: 1, blue: 1 } },
-                    horizontalAlignment: 'CENTER'
+      // Format the sheet for better readability - using cached sheetId
+      await retryWithBackoff(() =>
+        sheets.spreadsheets.batchUpdate({
+          spreadsheetId: SPREADSHEET_ID,
+          requestBody: {
+            requests: [
+              {
+                repeatCell: {
+                  range: {
+                    sheetId,
+                    startRowIndex: 0,
+                    endRowIndex: 1
+                  },
+                  cell: {
+                    userEnteredFormat: {
+                      backgroundColor: { red: 0.2, green: 0.7, blue: 0.4 },
+                      textFormat: { bold: true, foregroundColor: { red: 1, green: 1, blue: 1 } },
+                      horizontalAlignment: 'CENTER'
+                    }
+                  },
+                  fields: 'userEnteredFormat(backgroundColor,textFormat,horizontalAlignment)'
+                }
+              },
+              {
+                repeatCell: {
+                  range: {
+                    sheetId,
+                    startRowIndex: summaryHeaders.length,
+                    endRowIndex: summaryHeaders.length + 1
+                  },
+                  cell: {
+                    userEnteredFormat: {
+                      backgroundColor: { red: 0.9, green: 0.9, blue: 0.9 },
+                      textFormat: { bold: true },
+                      horizontalAlignment: 'LEFT'
+                    }
+                  },
+                  fields: 'userEnteredFormat(backgroundColor,textFormat,horizontalAlignment)'
+                }
+              },
+              {
+                autoResizeDimensions: {
+                  dimensions: {
+                    sheetId,
+                    dimension: 'COLUMNS',
+                    startIndex: 0,
+                    endIndex: 10
                   }
-                },
-                fields: 'userEnteredFormat(backgroundColor,textFormat,horizontalAlignment)'
-              }
-            },
-            {
-              repeatCell: {
-                range: {
-                  sheetId: (await sheets.spreadsheets.get({ spreadsheetId: SPREADSHEET_ID }))
-                    .data.sheets?.find((s: any) => s.properties?.title === SHEET_NAME)?.properties?.sheetId,
-                  startRowIndex: summaryHeaders.length,
-                  endRowIndex: summaryHeaders.length + 1
-                },
-                cell: {
-                  userEnteredFormat: {
-                    backgroundColor: { red: 0.9, green: 0.9, blue: 0.9 },
-                    textFormat: { bold: true },
-                    horizontalAlignment: 'LEFT'
-                  }
-                },
-                fields: 'userEnteredFormat(backgroundColor,textFormat,horizontalAlignment)'
-              }
-            },
-            {
-              autoResizeDimensions: {
-                dimensions: {
-                  sheetId: (await sheets.spreadsheets.get({ spreadsheetId: SPREADSHEET_ID }))
-                    .data.sheets?.find((s: any) => s.properties?.title === SHEET_NAME)?.properties?.sheetId,
-                  dimension: 'COLUMNS',
-                  startIndex: 0,
-                  endIndex: 10
                 }
               }
-            }
-          ]
-        }
-      });
+            ]
+          }
+        })
+      );
       
       console.log(`[RENTIQ_SHEETS] ✅ Successfully updated Google Sheet with ${rentiqData.rentiq_units.length} units`)
       
