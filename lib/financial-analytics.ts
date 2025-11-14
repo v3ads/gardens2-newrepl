@@ -1,254 +1,406 @@
-import { MasterCSVSync } from './master-csv-sync'
+import { prisma } from "./prisma";
+import { UnifiedAnalytics } from "./unified-analytics";
+import { classifyUnit } from "./unit-classification";
 
 interface FinancialMetrics {
-  actualMRR: number
-  marketPotential: number
-  vacancyLoss: number
-  arpu: number
-  occupiedUnits: number
-  totalUnits: number
-  vacantUnits: number
-  snapshotDate: string
-  guardrailsPass: boolean
-  guardrailErrors: string[]
+  actualMRR: number;
+  marketPotential: number;
+  vacancyLoss: number;
+  arpu: number;
+  occupiedUnits: number;
+  totalUnits: number;
+  vacantUnits: number;
+  snapshotDate: string;
+  guardrailsPass: boolean;
+  guardrailErrors: string[];
   // Family units data (excluded from standard metrics)
   familyUnits?: {
-    totalFamilyUnits: number
-    occupiedFamilyUnits: number
-    vacantFamilyUnits: number
-    familyVacancyLoss: number
-    familyActualMRR: number
-    familyMarketPotential: number
-  }
+    totalFamilyUnits: number;
+    occupiedFamilyUnits: number;
+    vacantFamilyUnits: number;
+    familyVacancyLoss: number;
+    familyActualMRR: number;
+    familyMarketPotential: number;
+  };
+  // New: segmentation by student vs non-student
+  studentBreakdown?: {
+    student: {
+      units: number;
+      occupiedUnits: number;
+      vacantUnits: number;
+      actualMRR: number;
+      marketPotential: number;
+      vacancyLoss: number;
+    };
+    nonStudent: {
+      units: number;
+      occupiedUnits: number;
+      vacantUnits: number;
+      actualMRR: number;
+      marketPotential: number;
+      vacancyLoss: number;
+    };
+  };
+  // New: segmentation by model tier
+  tierBreakdown?: {
+    tier: "basic" | "upgraded" | "premium" | "unknown";
+    units: number;
+    occupiedUnits: number;
+    vacantUnits: number;
+    actualMRR: number;
+    marketPotential: number;
+    vacancyLoss: number;
+  }[];
 }
 
-interface UnitRecord {
-  unit: string
-  tenant_status: string
-  primary_tenant: string
-  monthly_rent: number
-  market_rent: number
+// Internal shape for unit-level financial segmentation
+interface FinancialUnitRow {
+  unit: string;
+  tenantStatus: string;
+  monthlyRent: number;
+  marketRent: number;
+  isVacant: boolean;
+  isStudentUnit: boolean;
+  isFamily: boolean;
+  primaryClassification: "market" | "family" | "special_contract";
+  isAnalyticsExcluded: boolean;
+  modelTier: "basic" | "upgraded" | "premium" | "unknown";
 }
 
 export class FinancialAnalytics {
-  
+  /**
+   * Main entry point used by /api/analytics/financial
+   *
+   * Core metrics (MRR, market potential, vacancy loss, ARPU, unit counts)
+   * are sourced directly from UnifiedAnalytics to preserve existing behavior.
+   * Additional segmentation (student vs non-student, tier breakdown) is
+   * computed from masterCsvData + classification and attached without
+   * altering the main metrics.
+   */
   public static async getFinancialMetrics(): Promise<FinancialMetrics> {
-    // Use performance cache to avoid recomputation
-    const { PerformanceCache } = await import('./performance-cache')
-    
-    const result = await PerformanceCache.getCachedOrCompute(
-      'financial-metrics',
-      () => this.computeFinancialMetrics(),
-      10 // 10 minute cache
-    )
-    
-    return result.data
+    console.log(
+      "[FINANCIAL_ANALYTICS] Starting financial metrics computation...",
+    );
+
+    // 1) Use UnifiedAnalytics as source of truth for core metrics
+    const analytics = await UnifiedAnalytics.getAnalyticsMetrics({
+      excludeFamilyUnits: false,
+    });
+
+    // snapshotDate from UnifiedAnalytics is a Date, we normalize to ISO string
+    const snapshotDateStr =
+      analytics.snapshotDate instanceof Date
+        ? analytics.snapshotDate.toISOString()
+        : String(analytics.snapshotDate);
+
+    const metrics: FinancialMetrics = {
+      actualMRR: analytics.actualMRR,
+      marketPotential: analytics.marketPotential,
+      vacancyLoss: analytics.vacancyLoss,
+      arpu: analytics.arpu,
+      occupiedUnits: analytics.occupiedUnits,
+      totalUnits: analytics.totalUnits,
+      vacantUnits: analytics.vacantUnits,
+      snapshotDate: snapshotDateStr,
+      guardrailsPass: true,
+      guardrailErrors: [],
+      familyUnits: analytics.familyUnits
+        ? {
+            totalFamilyUnits: analytics.familyUnits.totalFamilyUnits,
+            occupiedFamilyUnits: analytics.familyUnits.occupiedFamilyUnits,
+            vacantFamilyUnits: analytics.familyUnits.vacantFamilyUnits,
+            familyVacancyLoss: analytics.familyUnits.familyVacancyLoss,
+            familyActualMRR: analytics.familyUnits.familyActualMRR,
+            familyMarketPotential: analytics.familyUnits.familyMarketPotential,
+          }
+        : undefined,
+    };
+
+    // 2) Compute classification-aware segmentation for deeper insights
+    const unitRows = await this.buildFinancialUnitRows();
+
+    metrics.studentBreakdown = this.computeStudentBreakdown(unitRows);
+    metrics.tierBreakdown = this.computeTierBreakdown(unitRows);
+
+    // 3) Run simple guardrails to detect obvious anomalies
+    this.applyGuardrails(metrics, unitRows);
+
+    console.log("[FINANCIAL_ANALYTICS] ✅ Financial metrics computed:", {
+      actualMRR: metrics.actualMRR,
+      marketPotential: metrics.marketPotential,
+      vacancyLoss: metrics.vacancyLoss,
+      arpu: metrics.arpu,
+      totalUnits: metrics.totalUnits,
+      occupiedUnits: metrics.occupiedUnits,
+      vacantUnits: metrics.vacantUnits,
+      guardrailsPass: metrics.guardrailsPass,
+    });
+
+    return metrics;
   }
 
-  private static async getDataFromDatabase(): Promise<any[]> {
-    console.log('[FINANCIAL_ANALYTICS] 📁 Reading financial data from AppFolio rent roll (CONSISTENT SOURCE)...')
-    
-    try {
-      const { prisma, withPrismaRetry } = await import('./prisma')
-      
-      // USE SAME DATA SOURCE AS OCCUPANCY: raw_appfolio_rent_roll
-      const rentRollData = await withPrismaRetry(() => prisma.$queryRaw`
-        SELECT 
-          "payloadJson"->>'Unit' as unit,
-          "payloadJson"->>'Status' as status,
-          "payloadJson"->>'Rent' as rent,
-          "payloadJson"->>'MarketRent' as market_rent,
-          "payloadJson"->>'Tenant' as tenant_name
-        FROM raw_appfolio_rent_roll
-        WHERE "payloadJson"->>'Unit' IS NOT NULL
-      `) as any[]
+  /**
+   * Build a normalized per-unit view from masterCsvData using the same
+   * vacancy selection rules as UnifiedAnalytics:
+   * - Multiple rows per unit possible (status transitions)
+   * - We select a single "best" row per unit based on status priority:
+   *   Future > Notice > Current > Vacant > Unknown
+   * - Unit is vacant ONLY if ALL rows are "Vacant" (no active/future leases)
+   * - Family units are ALWAYS considered occupied in financial views
+   */
+  private static async buildFinancialUnitRows(): Promise<FinancialUnitRow[]> {
+    console.log(
+      "[FINANCIAL_ANALYTICS] Loading master CSV data for segmentation...",
+    );
 
-      // Using singleton - no disconnect needed
+    const masterData = await prisma.masterCsvData.findMany({
+      select: {
+        unit: true,
+        tenantStatus: true,
+        monthlyRent: true,
+        marketRent: true,
+        unitType: true,
+        unitCategory: true,
+        tenantType: true,
+        daysVacant: true,
+      },
+    });
 
-      console.log(`[FINANCIAL_ANALYTICS] 📁 Found ${rentRollData.length} AppFolio rent roll records`)
-      
-      if (rentRollData.length === 0) {
-        console.log('[FINANCIAL_ANALYTICS] 📁 No AppFolio data available, returning empty array')
-        return []
-      }
-      
-      // Convert to format expected by financial analytics - CONSISTENT WITH OCCUPANCY ANALYTICS
-      const formattedData = rentRollData.map(record => ({
-        Unit: record.unit,
-        'Tenant Status': record.status === 'Current' ? 'Current' :
-                        record.status === 'Notice-Unrented' ? 'Notice' :
-                        record.status === 'Vacant-Unrented' ? 'Vacant' : 
-                        record.status,
-        'Monthly Rent': record.rent && (record.status === 'Current' || record.status === 'Notice-Unrented') ? record.rent.replace(/[,$]/g, '') : '0',
-        'Market Rent': record.market_rent ? record.market_rent.replace(/[,$]/g, '') : '0',
-        'Primary Tenant': 'Yes', // Default for rent roll data
-        'Tenant Name': record.tenant_name || '',
-        'First Name': record.tenant_name ? record.tenant_name.split(' ')[0] || '' : '',
-        'Last Name': record.tenant_name ? record.tenant_name.split(' ').slice(1).join(' ') || '' : '',
-        'Full Name': record.tenant_name || ''
-      }))
-      
-      console.log(`[FINANCIAL_ANALYTICS] ✅ Using consistent AppFolio data with unified vacancy logic`)
-      return formattedData
-      
-    } catch (dbError) {
-      console.warn('[FINANCIAL_ANALYTICS] 📁 AppFolio data fallback failed:', dbError)
-      return []
+    if (!masterData || masterData.length === 0) {
+      console.warn(
+        "[FINANCIAL_ANALYTICS] No master CSV data found in database",
+      );
+      return [];
     }
-  }
 
-  private static async computeFinancialMetrics(): Promise<FinancialMetrics> {
-    console.log('[FINANCIAL_ANALYTICS] Computing financial metrics using unified analytics...')
-    
-    try {
-      // Use unified analytics for consistent data and business rule application
-      const { UnifiedAnalytics } = await import('./unified-analytics')
-      const unifiedMetrics = await UnifiedAnalytics.getAnalyticsMetrics({ excludeFamilyUnits: false })
-      
-      console.log(`[FINANCIAL_ANALYTICS] 🔄 Using unified analytics data: ${unifiedMetrics.totalUnits} total units`)
-      console.log(`[FINANCIAL_ANALYTICS] 🏠 Family unit business rule applied: ${unifiedMetrics.familyUnits?.totalFamilyUnits || 0} family units always occupied`)
-      
-      // Use unified metrics directly since they already apply business rules correctly
-      const metrics: FinancialMetrics = {
-        actualMRR: unifiedMetrics.actualMRR,
-        marketPotential: unifiedMetrics.marketPotential,
-        vacancyLoss: unifiedMetrics.vacancyLoss,
-        arpu: unifiedMetrics.arpu,
-        occupiedUnits: unifiedMetrics.occupiedUnits,
-        totalUnits: unifiedMetrics.totalUnits,
-        vacantUnits: unifiedMetrics.vacantUnits,
-        snapshotDate: unifiedMetrics.snapshotDate,
-        guardrailsPass: false,
-        guardrailErrors: [],
-        familyUnits: unifiedMetrics.familyUnits
-      }
+    // Group rows by unit code
+    const unitGroups = new Map<string, typeof masterData>();
 
-      // Step 4: Run guardrails validation - simplified for unified analytics
-      this.validateGuardrailsSimple(metrics)
-
-      console.log('[FINANCIAL_ANALYTICS] ✅ Financial metrics computed (EXCLUDING family units):', {
-        actualMRR: metrics.actualMRR,
-        marketPotential: metrics.marketPotential,
-        vacancyLoss: metrics.vacancyLoss,
-        arpu: metrics.arpu.toFixed(2),
-        regularUnits: metrics.totalUnits,
-        guardrailsPass: metrics.guardrailsPass
-      })
-      
-      console.log('[FINANCIAL_ANALYTICS] 🏠 Family units data (separate tracking):', {
-        totalFamilyUnits: metrics.familyUnits?.totalFamilyUnits,
-        familyVacancyLoss: metrics.familyUnits?.familyVacancyLoss,
-        familyActualMRR: metrics.familyUnits?.familyActualMRR,
-        familyMarketPotential: metrics.familyUnits?.familyMarketPotential
-      })
-
-      return metrics
-
-    } catch (error) {
-      console.error('[FINANCIAL_ANALYTICS] ❌ Error computing financial metrics:', error)
-      throw error
-    }
-  }
-
-  private static createCanonicalTable(masterData: any[]): UnitRecord[] {
-    // Group by unit and apply deduplication priority
-    const unitGroups = new Map<string, any[]>()
-    
     for (const record of masterData) {
-      // Handle multiple data formats: database (Unit), CSV (unit), or camelCase (unit)
-      const unit = (record.Unit || record.unit)?.toString()?.trim()
-      if (!unit) continue
-      
-      if (!unitGroups.has(unit)) {
-        unitGroups.set(unit, [])
+      if (!unitGroups.has(record.unit)) {
+        unitGroups.set(record.unit, []);
       }
-      unitGroups.get(unit)!.push(record)
+      unitGroups.get(record.unit)!.push(record);
     }
 
-    const canonicalTable: UnitRecord[] = []
-    
-    for (const [unit, records] of unitGroups) {
-      // Apply dedup rule: Primary Tenant = "Yes" takes priority, otherwise first record
-      // Handle multiple data formats from different sources
-      const primaryTenantRecord = records.find(r => 
-        (r['Primary Tenant'] === 'Yes' || r.primary_tenant === 'Yes' || r.primaryTenant === 'Yes'))
-      const selectedRecord = primaryTenantRecord || records[0]
-      
-      canonicalTable.push({
-        unit,
-        tenant_status: selectedRecord['Tenant Status'] || selectedRecord.tenant_status || selectedRecord.tenantStatus || '',
-        primary_tenant: selectedRecord['Primary Tenant'] || selectedRecord.primary_tenant || selectedRecord.primaryTenant || '',
-        monthly_rent: parseFloat(selectedRecord['Monthly Rent'] || selectedRecord.monthly_rent || selectedRecord.monthlyRent) || 0,
-        market_rent: parseFloat(selectedRecord['Market Rent'] || selectedRecord.market_rent || selectedRecord.marketRent) || 0
-      })
+    // Status priority: Future/Notice/Current > Vacant > Unknown
+    const getStatusPriority = (status: string | null | undefined): number => {
+      const s = (status || "").toLowerCase().trim();
+      if (s.startsWith("future")) return 4;
+      if (s.startsWith("notice")) return 3;
+      if (s.startsWith("current")) return 2;
+      if (s.startsWith("vacant")) return 1;
+      return 0;
+    };
+
+    const units: FinancialUnitRow[] = [];
+
+    for (const [unitCode, records] of unitGroups.entries()) {
+      // Determine vacancy across all rows for this unit
+      const statuses = records.map((r) => (r.tenantStatus || "").toLowerCase());
+      const hasVacant = statuses.some((s) => s.startsWith("vacant"));
+      const hasNonVacant = statuses.some(
+        (s) => s.length > 0 && !s.startsWith("vacant"),
+      );
+
+      // SMART vacancy: Vacant only if all rows show Vacant
+      let isVacant = hasVacant && !hasNonVacant;
+
+      // Select the "best" row based on status priority
+      const selectedRecord = records.reduce((best, current) => {
+        const bestPriority = getStatusPriority(best.tenantStatus);
+        const currentPriority = getStatusPriority(current.tenantStatus);
+        return currentPriority > bestPriority ? current : best;
+      });
+
+      // Apply centralized classification
+      const classification = classifyUnit({
+        unitCode,
+        unitType: selectedRecord.unitType,
+        marketRent: selectedRecord.marketRent,
+        monthlyRent: selectedRecord.monthlyRent,
+      });
+
+      // Business rule: Family units are ALWAYS considered occupied
+      if (classification.isFamily) {
+        isVacant = false;
+      }
+
+      const monthlyRent = selectedRecord.monthlyRent || 0;
+      const marketRent = selectedRecord.marketRent || 0;
+
+      units.push({
+        unit: unitCode,
+        tenantStatus: selectedRecord.tenantStatus || "",
+        monthlyRent,
+        marketRent,
+        isVacant,
+        isStudentUnit: classification.isStudentUnit,
+        isFamily: classification.isFamily,
+        primaryClassification: classification.primaryClassification,
+        isAnalyticsExcluded: classification.isAnalyticsExcluded,
+        modelTier: classification.modelTier,
+      });
     }
 
-    console.log(`[FINANCIAL_ANALYTICS] Canonical table created: ${canonicalTable.length} units from ${masterData.length} raw records`)
-    return canonicalTable
+    console.log(
+      "[FINANCIAL_ANALYTICS] Built financial unit rows:",
+      units.length,
+      "units",
+    );
+
+    return units;
   }
 
-  private static validateGuardrailsSimple(metrics: FinancialMetrics): void {
-    const errors: string[] = []
-    
-    // Guardrail 1: Vacancy Loss = Market Potential - Actual MRR (within tolerance)
-    const calculatedVacancyLoss = metrics.marketPotential - metrics.actualMRR
-    if (Math.abs(metrics.vacancyLoss - calculatedVacancyLoss) >= 1) {
-      errors.push(`Vacancy Loss mismatch: ${metrics.vacancyLoss} vs calculated ${calculatedVacancyLoss}`)
+  /**
+   * Compute student vs non-student breakdown from unit rows.
+   * Only includes units that are:
+   * - primaryClassification = 'market'
+   * - not analytics-excluded
+   */
+  private static computeStudentBreakdown(
+    units: FinancialUnitRow[],
+  ): FinancialMetrics["studentBreakdown"] {
+    if (!units || units.length === 0) return undefined;
+
+    const eligible = units.filter(
+      (u) => u.primaryClassification === "market" && !u.isAnalyticsExcluded,
+    );
+
+    const studentUnits = eligible.filter((u) => u.isStudentUnit);
+    const nonStudentUnits = eligible.filter((u) => !u.isStudentUnit);
+
+    const aggregate = (subset: FinancialUnitRow[]) => {
+      const unitsCount = subset.length;
+      const occupied = subset.filter((u) => !u.isVacant).length;
+      const vacant = subset.filter((u) => u.isVacant).length;
+
+      const actualMRR = subset
+        .filter((u) => !u.isVacant)
+        .reduce((sum, u) => sum + u.monthlyRent, 0);
+
+      const marketPotential = subset.reduce((sum, u) => sum + u.marketRent, 0);
+
+      const vacancyLoss =
+        marketPotential -
+        subset
+          .filter((u) => !u.isVacant)
+          .reduce((sum, u) => sum + u.marketRent, 0);
+
+      return {
+        units: unitsCount,
+        occupiedUnits: occupied,
+        vacantUnits: vacant,
+        actualMRR,
+        marketPotential,
+        vacancyLoss,
+      };
+    };
+
+    return {
+      student: aggregate(studentUnits),
+      nonStudent: aggregate(nonStudentUnits),
+    };
+  }
+
+  /**
+   * Compute segmentation by model tier for market units.
+   * Only includes units that are:
+   * - primaryClassification = 'market'
+   * - not analytics-excluded
+   */
+  private static computeTierBreakdown(
+    units: FinancialUnitRow[],
+  ): FinancialMetrics["tierBreakdown"] {
+    if (!units || units.length === 0) return undefined;
+
+    const eligible = units.filter(
+      (u) => u.primaryClassification === "market" && !u.isAnalyticsExcluded,
+    );
+
+    const tiers: ("basic" | "upgraded" | "premium" | "unknown")[] = [
+      "basic",
+      "upgraded",
+      "premium",
+      "unknown",
+    ];
+
+    const results = tiers.map((tier) => {
+      const subset = eligible.filter((u) => u.modelTier === tier);
+      const unitsCount = subset.length;
+      const occupied = subset.filter((u) => !u.isVacant).length;
+      const vacant = subset.filter((u) => u.isVacant).length;
+
+      const actualMRR = subset
+        .filter((u) => !u.isVacant)
+        .reduce((sum, u) => sum + u.monthlyRent, 0);
+
+      const marketPotential = subset.reduce((sum, u) => sum + u.marketRent, 0);
+
+      const vacancyLoss =
+        marketPotential -
+        subset
+          .filter((u) => !u.isVacant)
+          .reduce((sum, u) => sum + u.marketRent, 0);
+
+      return {
+        tier,
+        units: unitsCount,
+        occupiedUnits: occupied,
+        vacantUnits: vacant,
+        actualMRR,
+        marketPotential,
+        vacancyLoss,
+      };
+    });
+
+    return results;
+  }
+
+  /**
+   * Simple guardrails to catch obvious anomalies.
+   * We intentionally keep these lightweight and do NOT try to override
+   * UnifiedAnalytics; they are just sanity checks.
+   */
+  private static applyGuardrails(
+    metrics: FinancialMetrics,
+    units: FinancialUnitRow[],
+  ) {
+    const errors: string[] = [];
+
+    // Guardrail 1: total units should match unique units from rows
+    const uniqueUnits = new Set(units.map((u) => u.unit));
+    if (metrics.totalUnits !== uniqueUnits.size) {
+      errors.push(
+        `Total units mismatch: metrics.totalUnits=${metrics.totalUnits} vs unique units=${uniqueUnits.size}`,
+      );
     }
 
-    // Guardrail 2: Unit counts consistency
+    // Guardrail 2: totalUnits should equal occupied + vacant from metric
     if (metrics.totalUnits !== metrics.occupiedUnits + metrics.vacantUnits) {
-      errors.push(`Unit count mismatch: ${metrics.totalUnits} total vs ${metrics.occupiedUnits + metrics.vacantUnits} sum`)
+      errors.push(
+        `Unit count mismatch: total=${metrics.totalUnits}, occupied=${metrics.occupiedUnits}, vacant=${metrics.vacantUnits}`,
+      );
     }
 
-    metrics.guardrailsPass = errors.length === 0
-    metrics.guardrailErrors = errors
+    // Guardrail 3: basic non-negative checks
+    if (metrics.actualMRR < 0) {
+      errors.push("actualMRR is negative");
+    }
+    if (metrics.marketPotential < 0) {
+      errors.push("marketPotential is negative");
+    }
+    if (metrics.vacancyLoss < 0) {
+      errors.push("vacancyLoss is negative");
+    }
+
+    metrics.guardrailsPass = errors.length === 0;
+    metrics.guardrailErrors = errors;
 
     if (metrics.guardrailsPass) {
-      console.log('[FINANCIAL_ANALYTICS] ✅ All guardrails passed')
+      console.log("[FINANCIAL_ANALYTICS] ✅ All guardrails passed");
     } else {
-      console.log('[FINANCIAL_ANALYTICS] ⚠️ Guardrail failures:', errors)
+      console.log("[FINANCIAL_ANALYTICS] ⚠️ Guardrail failures:", errors);
     }
   }
-
-  private static validateGuardrails(metrics: FinancialMetrics, occupiedUnits: UnitRecord[], vacantUnits: UnitRecord[]): void {
-    const errors: string[] = []
-    
-    // Guardrail 1: Vacancy Loss = Market Potential - Actual MRR (within tolerance)
-    const calculatedVacancyLoss = metrics.marketPotential - metrics.actualMRR
-    if (Math.abs(metrics.vacancyLoss - calculatedVacancyLoss) >= 1) {
-      errors.push(`Vacancy Loss mismatch: ${metrics.vacancyLoss} vs calculated ${calculatedVacancyLoss}`)
-    }
-
-    // Guardrail 2: Actual MRR = sum of Monthly Rent for occupied units
-    const actualMRRCheck = occupiedUnits.reduce((sum, unit) => sum + unit.monthly_rent, 0)
-    if (Math.abs(metrics.actualMRR - actualMRRCheck) >= 1) {
-      errors.push(`Actual MRR mismatch: ${metrics.actualMRR} vs ${actualMRRCheck}`)
-    }
-
-    // Guardrail 3: Market Potential = sum(Monthly Rent occupied) + sum(Market Rent vacant)
-    const occupiedSum = occupiedUnits.reduce((sum, unit) => sum + unit.monthly_rent, 0)
-    const vacantSum = vacantUnits.reduce((sum, unit) => sum + unit.market_rent, 0)
-    const marketPotentialCheck = occupiedSum + vacantSum
-    if (Math.abs(metrics.marketPotential - marketPotentialCheck) >= 1) {
-      errors.push(`Market Potential mismatch: ${metrics.marketPotential} vs ${marketPotentialCheck}`)
-    }
-
-    // Guardrail 4: Unit counts consistency
-    if (metrics.totalUnits !== metrics.occupiedUnits + metrics.vacantUnits) {
-      errors.push(`Unit count mismatch: ${metrics.totalUnits} total vs ${metrics.occupiedUnits + metrics.vacantUnits} sum`)
-    }
-
-    metrics.guardrailsPass = errors.length === 0
-    metrics.guardrailErrors = errors
-
-    if (metrics.guardrailsPass) {
-      console.log('[FINANCIAL_ANALYTICS] ✅ All guardrails passed')
-    } else {
-      console.log('[FINANCIAL_ANALYTICS] ⚠️ Guardrail failures:', errors)
-    }
-  }
-
-
-
 }
