@@ -336,8 +336,8 @@ export class RentIQAnalytics {
       return 'Shared 1 BD Furnished'
     }
     
-    // Basic: Monaco, Martinique
-    if (isMonaco || isMartinique) {
+    // Basic: Monaco, Martinique, Capri
+    if (isMonaco || isMartinique || isCapri) {
       if (isFurnished) return 'Basic-Furnished'
       if (isUnfurnished) return 'Basic-Unfurnished'
       // Log unmapped basic variant
@@ -351,15 +351,6 @@ export class RentIQAnalytics {
       if (isUnfurnished) return 'Premium-Unfurnished'
       // Log unmapped premium variant
       console.warn(`[RENTIQ] Premium unit type "${unitType}" has no furnished/unfurnished token - falling back to market rent`)
-      return null
-    }
-    
-    // Upgraded: Capri
-    if (isCapri) {
-      if (isFurnished) return 'Upgraded-Furnished'
-      if (isUnfurnished) return 'Upgraded-Unfurnished'
-      // Log unmapped upgraded variant
-      console.warn(`[RENTIQ] Upgraded unit type "${unitType}" has no furnished/unfurnished token - falling back to market rent`)
       return null
     }
     
