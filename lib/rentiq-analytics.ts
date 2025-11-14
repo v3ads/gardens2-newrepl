@@ -358,6 +358,7 @@ export class RentIQAnalytics {
     const isMonaco = tokens.has('monaco')
     const isCapri = tokens.has('capri')
     const isMartinique = tokens.has('martinique')
+    const isBarcelona = tokens.has('barcelona')
     const isNautica = tokens.has('nautica')
     const isPortofino = tokens.has('portofino')
     const isStudent = tokens.has('student')
@@ -373,6 +374,15 @@ export class RentIQAnalytics {
       if (isUnfurnished) return 'Basic-Unfurnished'
       // Log unmapped basic variant
       console.warn(`[RENTIQ] Basic unit type "${unitType}" has no furnished/unfurnished token - falling back to market rent`)
+      return null
+    }
+    
+    // Upgraded: Barcelona (intermediate tier)
+    if (isBarcelona) {
+      if (isFurnished) return 'Upgraded-Furnished'
+      if (isUnfurnished) return 'Upgraded-Unfurnished'
+      // Log unmapped upgraded variant
+      console.warn(`[RENTIQ] Upgraded unit type "${unitType}" has no furnished/unfurnished token - falling back to market rent`)
       return null
     }
     
@@ -392,19 +402,20 @@ export class RentIQAnalytics {
 
   /**
    * Assign category based on exact market rent match (fallback)
-   * Updated tier structure: Basic (Monaco/Martinique/Capri), Premium (Nautica/Portofino), Shared (Student)
+   * Updated tier structure: Basic (Monaco/Martinique/Capri), Upgraded (Barcelona), Premium (Nautica/Portofino), Shared (Student)
    */
   private assignCategoryByMarketRent(marketRent: number, thresholds: RentIQThreshold[]): string {
-    // Exact market rent to category mapping (no more Upgraded tier)
+    // Exact market rent to category mapping
     const categoryMapping: { [key: number]: string } = {
       1500: 'Shared 1 BD Furnished',
-      1990: 'Basic-Unfurnished',    // Monaco/Martinique unfurnished
-      2000: 'Basic-Unfurnished',    // Capri unfurnished
-      2020: 'Basic-Unfurnished',    // Capri unfurnished variant
-      2220: 'Premium-Unfurnished',  // Nautica/Portofino unfurnished
-      2240: 'Basic-Furnished',      // Monaco/Martinique/Capri furnished
-      2370: 'Basic-Furnished',      // High-end Basic furnished
-      2570: 'Premium-Furnished'     // Nautica/Portofino furnished
+      1990: 'Basic-Unfurnished',      // Monaco/Martinique unfurnished
+      2000: 'Basic-Unfurnished',      // Capri unfurnished
+      2020: 'Upgraded-Unfurnished',   // Barcelona unfurnished
+      2120: 'Upgraded-Furnished',     // Barcelona furnished
+      2220: 'Premium-Unfurnished',    // Nautica/Portofino unfurnished
+      2240: 'Basic-Furnished',        // Monaco/Martinique/Capri furnished
+      2370: 'Basic-Furnished',        // High-end Basic furnished
+      2570: 'Premium-Furnished'       // Nautica/Portofino furnished
     }
 
     const category = categoryMapping[marketRent]
@@ -412,10 +423,11 @@ export class RentIQAnalytics {
       return category
     }
 
-    // Fallback: assign based on rent ranges (no more Upgraded tier)
+    // Fallback: assign based on rent ranges
     if (marketRent >= 2500) return 'Premium-Furnished'
     if (marketRent >= 2200) return 'Premium-Unfurnished'
-    if (marketRent >= 2100) return 'Basic-Furnished'
+    if (marketRent >= 2100) return 'Upgraded-Furnished'
+    if (marketRent >= 2000) return 'Upgraded-Unfurnished'
     if (marketRent >= 1900) return 'Basic-Furnished'
     if (marketRent >= 1700) return 'Basic-Unfurnished'
     return 'Shared 1 BD Furnished'
@@ -566,7 +578,7 @@ export class RentIQAnalytics {
   }
 
   /**
-   * Get threshold settings with backward-compatible migration from Upgraded to Basic tier
+   * Get threshold settings with backward-compatible Upgraded tier addition
    */
   async getThresholds(): Promise<Record<string, number>> {
     try {
@@ -579,39 +591,28 @@ export class RentIQAnalytics {
         try {
           const parsed = JSON.parse(stored.value)
           
-          // Migrate legacy Upgraded thresholds to Basic (backward compatibility)
-          const migrated: Record<string, number> = {}
+          // Backward compatibility: Add Upgraded tier keys if missing
+          const migrated: Record<string, number> = { ...parsed }
           let hasMigration = false
           
-          // First, copy all existing values
-          for (const [key, value] of Object.entries(parsed)) {
-            migrated[key] = value as number
+          // Add Upgraded-Unfurnished if missing (default: between Basic and Premium)
+          if (!migrated['min_upgraded_unfurnished']) {
+            migrated['min_upgraded_unfurnished'] = 1850
+            hasMigration = true
+            console.log(`[RENTIQ] 🔄 Adding missing Upgraded threshold: min_upgraded_unfurnished = 1850`)
           }
           
-          // Then migrate Upgraded keys ONLY if corresponding Basic key doesn't exist
-          for (const [key, value] of Object.entries(parsed)) {
-            if (key.includes('upgraded')) {
-              const newKey = key.replace('upgraded', 'basic')
-              
-              // Only migrate if Basic key doesn't already exist (preserve modern values)
-              if (!migrated[newKey]) {
-                migrated[newKey] = value as number
-                hasMigration = true
-                console.log(`[RENTIQ] 🔄 Migrating threshold: ${key} → ${newKey} (${value})`)
-              } else {
-                console.log(`[RENTIQ] ⏭️  Skipping ${key}: ${newKey} already exists with value ${migrated[newKey]}`)
-              }
-              
-              // Remove old Upgraded key
-              delete migrated[key]
-              hasMigration = true
-            }
+          // Add Upgraded-Furnished if missing
+          if (!migrated['min_upgraded_furnished']) {
+            migrated['min_upgraded_furnished'] = 2050
+            hasMigration = true
+            console.log(`[RENTIQ] 🔄 Adding missing Upgraded threshold: min_upgraded_furnished = 2050`)
           }
           
           // If migration occurred, save updated thresholds
           if (hasMigration) {
             await this.updateThresholds(migrated)
-            console.log(`[RENTIQ] ✅ Migrated thresholds from Upgraded to Basic tier`)
+            console.log(`[RENTIQ] ✅ Migrated thresholds to include Upgraded tier`)
           }
           
           console.log(`[RENTIQ] ✅ Loaded thresholds from database:`, migrated)
@@ -624,16 +625,18 @@ export class RentIQAnalytics {
       console.warn('[RENTIQ] Failed to load thresholds from database, using defaults:', error)
     }
 
-    // Return updated defaults (no more Upgraded tier)
+    // Return updated defaults with Upgraded tier (Barcelona units)
     const defaults = {
       'min_basic_unfurnished': 1700,
       'min_basic_furnished': 1900,
+      'min_upgraded_unfurnished': 1850,
+      'min_upgraded_furnished': 2050,
       'min_premium_unfurnished': 2100,
       'min_premium_furnished': 2250,
       'min_student_unit': 1500
     }
 
-    console.log(`[RENTIQ] Using default thresholds (Basic/Premium/Shared structure)`)
+    console.log(`[RENTIQ] Using default thresholds (Basic/Upgraded/Premium/Shared structure)`)
     return defaults
   }
 
