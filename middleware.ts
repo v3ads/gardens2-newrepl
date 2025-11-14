@@ -89,14 +89,7 @@ export default withAuth(
           '/health',
         ]
 
-        // Note: /analytics and other dashboard routes require authentication
-        // but should be accessible when logged in
-
         if (publicPaths.includes(req.nextUrl.pathname) ||
-            req.nextUrl.pathname.startsWith('/analytics') || // Added analytics to public paths check
-            req.nextUrl.pathname.startsWith('/dashboard') || // Also ensure dashboard routes are considered
-            req.nextUrl.pathname.startsWith('/overview') ||  // And overview
-            req.nextUrl.pathname.startsWith('/admin') ||    // And admin
             req.nextUrl.pathname.startsWith('/api/debug') ||
             req.nextUrl.pathname.startsWith('/api/_diag') ||
             req.nextUrl.pathname.startsWith('/api/webhook')) {

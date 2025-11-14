@@ -81,8 +81,12 @@ export default function AnalyticsPage() {
   const { setSelectedCategory } = useAnalytics();
 
   const handleCategorySelect = (categoryKey: AnalyticsCategoryKey) => {
-    setSelectedCategory(categoryKey);
-    router.push(`/analytics/${categoryKey}`);
+    try {
+      setSelectedCategory(categoryKey);
+      router.push(`/analytics/${categoryKey}`);
+    } catch (error) {
+      console.error('[ANALYTICS] Navigation error:', error);
+    }
   };
 
   return (

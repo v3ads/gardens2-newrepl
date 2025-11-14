@@ -44,6 +44,7 @@ function createPrismaClient() {
 // CRITICAL: Use lazy initialization - don't create client until first access
 // This prevents DATABASE_URL validation from running during Next.js build
 let _prisma: PrismaClient | undefined
+let _connectionTested = false
 
 export const prisma = new Proxy({} as PrismaClient, {
   get(target, prop) {
@@ -53,6 +54,12 @@ export const prisma = new Proxy({} as PrismaClient, {
         globalForPrisma.prisma = _prisma
       }
     }
+    
+    // Test connection on first real query to catch I/O errors early
+    if (!_connectionTested && prop === '$connect') {
+      _connectionTested = true
+    }
+    
     return _prisma[prop as keyof PrismaClient]
   }
 })
