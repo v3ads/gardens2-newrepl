@@ -310,34 +310,61 @@ export class RentIQAnalytics {
   }
 
   /**
-   * Map unit types to RentIQ categories
+   * Map unit types to RentIQ categories using token-based normalization
+   * to prevent substring matching bugs (e.g., "unfurnished" containing "furnished")
    */
   private mapUnitTypeToCategory(unitType: string): string | null {
     const type = unitType.toLowerCase()
     
-    // Martinique/Nautica = Premium, Monaco = Basic, Capri = Upgraded
-    if ((type.includes('martinique') || type.includes('nautica')) && type.includes('furnished')) {
-      return 'Premium-Furnished'
-    }
-    if ((type.includes('martinique') || type.includes('nautica')) && type.includes('unfurnished')) {
-      return 'Premium-Unfurnished'
-    }
-    if (type.includes('monaco') && type.includes('furnished')) {
-      return 'Basic-Furnished'
-    }
-    if (type.includes('monaco') && type.includes('unfurnished')) {
-      return 'Basic-Unfurnished'
-    }
-    if (type.includes('capri') && type.includes('furnished')) {
-      return 'Upgraded-Furnished'
-    }
-    if (type.includes('capri') && type.includes('unfurnished')) {
-      return 'Upgraded-Unfurnished'
-    }
-    if (type.includes('student')) {
+    // Normalize tokens: split on non-letters and create a set for exact matching
+    const tokens = new Set(type.split(/[^a-z]+/).filter(t => t.length > 0))
+    
+    // Determine furnished status with explicit token matching (no substring issues)
+    const isUnfurnished = tokens.has('unfurnished')
+    const isFurnished = tokens.has('furnished') && !isUnfurnished
+    
+    // Determine property family
+    const isMonaco = tokens.has('monaco')
+    const isCapri = tokens.has('capri')
+    const isMartinique = tokens.has('martinique')
+    const isNautica = tokens.has('nautica')
+    const isPortofino = tokens.has('portofino')
+    const isStudent = tokens.has('student')
+    
+    // Special case: Student units
+    if (isStudent) {
       return 'Shared 1 BD Furnished'
     }
     
+    // Premium: Martinique, Nautica, Portofino
+    if (isMartinique || isNautica || isPortofino) {
+      if (isFurnished) return 'Premium-Furnished'
+      if (isUnfurnished) return 'Premium-Unfurnished'
+      // Log unmapped premium variant
+      console.warn(`[RENTIQ] Premium unit type "${unitType}" has no furnished/unfurnished token - falling back to market rent`)
+      return null
+    }
+    
+    // Basic: Monaco
+    if (isMonaco) {
+      if (isFurnished) return 'Basic-Furnished'
+      if (isUnfurnished) return 'Basic-Unfurnished'
+      // Log unmapped basic variant
+      console.warn(`[RENTIQ] Basic unit type "${unitType}" has no furnished/unfurnished token - falling back to market rent`)
+      return null
+    }
+    
+    // Upgraded: Capri
+    if (isCapri) {
+      if (isFurnished) return 'Upgraded-Furnished'
+      if (isUnfurnished) return 'Upgraded-Unfurnished'
+      // Log unmapped upgraded variant
+      console.warn(`[RENTIQ] Upgraded unit type "${unitType}" has no furnished/unfurnished token - falling back to market rent`)
+      return null
+    }
+    
+    // Log completely unknown unit type for operational visibility
+    console.warn(`[RENTIQ] Unknown unit type "${unitType}" - falling back to market rent categorization`)
     return null
   }
 
