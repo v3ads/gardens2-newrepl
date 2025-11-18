@@ -4,7 +4,7 @@
   "private": true,
   "scripts": {
     "preinstall": "bash scripts/preinstall.sh",
-    "dev": "bash scripts/start-dev.sh",
+    "dev": "next dev",
     "dev:raw": "next dev -H 0.0.0.0 -p 5000",
     "build": "NODE_OPTIONS='--max-old-space-size=8192' prisma generate && NEXT_DIST_DIR=.next next build",
     "postbuild": "prisma db seed || echo 'Seed completed or skipped'",
@@ -16,7 +16,8 @@
     "db:migrate": "prisma migrate dev",
     "db:seed": "prisma db seed",
     "db:studio": "prisma studio",
-    "db:push": "prisma db push"
+    "db:push": "prisma db push",
+    "dev:turbo": "next dev --turbo"
   },
   "dependencies": {
     "@auth/core": "^0.34.2",
